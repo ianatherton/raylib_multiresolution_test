@@ -1,51 +1,34 @@
-CC = gcc
-CFLAGS = -Wall -std=c99 -D_DEFAULT_SOURCE -Wno-missing-braces
-LDFLAGS = -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+# Makefile for Raylib project
 
-# Directories
-SRC_DIR = src
-BUILD_DIR = build
-BIN_DIR = .
+# Compiler and flags
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c99 -I/usr/local/include -DPLATFORM_DESKTOP
+LDFLAGS = -L/usr/local/lib -lraylib -lm -lpthread -ldl -lrt -lX11
 
 # Source files
-SOURCES = $(wildcard $(SRC_DIR)/*.c) \
-          $(wildcard $(SRC_DIR)/core/*.c) \
-          $(wildcard $(SRC_DIR)/renderer/*.c) \
-          $(wildcard $(SRC_DIR)/world/*.c) \
-          $(wildcard $(SRC_DIR)/utils/*.c)
+SRCS = main.c
+# If you have other .c files in src/ that need to be compiled and linked:
+# SRCS += $(wildcard src/**/*.c)
 
 # Object files
-OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+OBJS = $(SRCS:.c=.o)
 
-# Executable
-EXECUTABLE = $(BIN_DIR)/dangerous_forest
+# Executable name
+TARGET = game
 
 # Default target
-all: directories $(EXECUTABLE)
+all: $(TARGET)
 
-# Create build directories
-directories:
-	mkdir -p $(BUILD_DIR)
-	mkdir -p $(BUILD_DIR)/core
-	mkdir -p $(BUILD_DIR)/renderer
-	mkdir -p $(BUILD_DIR)/world
-	mkdir -p $(BUILD_DIR)/utils
-	mkdir -p $(BIN_DIR)
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
 
-# Compile source files
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Link object files
-$(EXECUTABLE): $(OBJECTS)
-	$(CC) $^ -o $@ $(LDFLAGS)
-
-# Clean build files
+# Clean rule
 clean:
-	rm -rf $(BUILD_DIR) $(EXECUTABLE)
+	rm -f $(OBJS) $(TARGET)
 
-# Run the game
-run: all
-	$(EXECUTABLE)
-
-.PHONY: all directories clean run
+# Run rule
+run: $(TARGET)
+	./$(TARGET)
