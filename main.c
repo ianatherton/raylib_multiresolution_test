@@ -2,6 +2,8 @@
 #include "scene.h"  
 #include "props.h"
 #include "renderer.h"
+#include <stdlib.h> // For rand() and srand()
+#include <time.h>   // For time()
 
 int main(void) {
     // Initialization
@@ -33,18 +35,55 @@ int main(void) {
                            "raw-assets/tiling_dungeon_brickwall01.png", 
                            "raw-assets/tiling_dungeon_floor01.png");
 
-    // Define prop positions (grass)
-    Vector3 grassPositions[] = {
-        (Vector3){ -2.0f, 0.05f, -2.0f },
-        (Vector3){  2.0f, 0.05f, -2.0f },
-        (Vector3){ -2.0f, 0.05f,  2.0f },
-        (Vector3){  2.0f, 0.05f,  2.0f },
-        (Vector3){  0.0f, 0.05f,  0.0f }
-    };
-    int numGrassProps = sizeof(grassPositions)/sizeof(grassPositions[0]);
+    // Define number of props to create
+    const int numGrassProps = 150;  // 150 grass billboards
+    const int numRockProps = 50;    // 50 rock models
+    const int totalProps = numGrassProps + numRockProps;
     
-    // Initialize props
-    Props props = InitProps(grassPositions, numGrassProps, "raw-assets/grass01_c.png");
+    // Initialize random number generator
+    srand(time(NULL));
+    
+    // Initialize props with both grass and rock assets
+    Props props = InitProps(
+        numGrassProps,
+        numRockProps,
+        "raw-assets/grass01_c.png",    // Grass texture
+        "raw-assets/rock.glb",         // Rock model
+        "raw-assets/tilingrock01_c.png" // Rock texture
+    );
+    
+    // Calculate usable room area (slightly inside the walls)
+    float marginFromWall = 1.0f;
+    float minX = -roomWidth/2 + marginFromWall;
+    float maxX = roomWidth/2 - marginFromWall;
+    float minZ = -roomLength/2 + marginFromWall;
+    float maxZ = roomLength/2 - marginFromWall;
+    
+    // Add grass props with random positions
+    for (int i = 0; i < numGrassProps; i++) {
+        // Generate random position within room bounds
+        float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
+        float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
+        
+        // Create grass prop slightly above floor
+        Vector3 position = (Vector3){ x, 0.05f, z };
+        AddBillboardProp(&props, position, i);
+    }
+    
+    // Add rock props with random positions
+    for (int i = 0; i < numRockProps; i++) {
+        // Generate random position within room bounds
+        float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
+        float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
+        
+        // Create rock prop on the floor
+        Vector3 position = (Vector3){ x, 0.0f, z };
+        AddModelProp(&props, position, numGrassProps + i);
+    }
+    
+    // Print prop counts
+    printf("Created %d grass props and %d rock props (total: %d)\n", 
+           numGrassProps, numRockProps, totalProps);
 
     DisableCursor(); // Hide cursor for FPS controls
 
