@@ -28,7 +28,7 @@ void EndQuarterResRender(void) {
     EndTextureMode();
 }
 
-void CompositeFinalFrame(Renderer renderer) {
+void CompositeFinalFrame(Renderer renderer, int renderedProps, int visibleProps) {
     BeginDrawing();
     ClearBackground(BLACK);
     
@@ -48,6 +48,12 @@ void CompositeFinalFrame(Renderer renderer) {
     
     // Draw FPS counter
     DrawFPS(10, 10);
+    
+    // Draw props statistics
+    DrawText(TextFormat("Rendered Props: %d/%d (%.1f%%)", 
+             renderedProps, visibleProps, 
+             visibleProps > 0 ? (float)renderedProps / visibleProps * 100.0f : 0), 
+             10, 40, 20, WHITE);
     
     EndDrawing();
 }

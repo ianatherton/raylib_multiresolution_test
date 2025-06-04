@@ -117,7 +117,7 @@ int main(void) {
                 // Draw debug visualization if enabled
                 if (gameState.showDebugBoxes) {
                     DrawSceneDebug(scene);
-                    DrawPropsDebug(props, gameState.camera);
+                    DrawPropsDebug(&props, gameState.camera);
                 }
             EndMode3D();
         EndFullResRender();
@@ -126,12 +126,12 @@ int main(void) {
         BeginQuarterResRender(renderer);
             BeginMode3D(gameState.camera);
                 // Draw props
-                DrawProps(props, gameState.camera);
+                DrawProps(&props, gameState.camera);
             EndMode3D();
         EndQuarterResRender();
 
-        // 3. Composite to screen
-        CompositeFinalFrame(renderer);
+        // 3. Composite to screen and draw UI
+        CompositeFinalFrame(renderer, props.renderedCount, props.visibleCount);
     }
 
     // De-Initialization
@@ -139,7 +139,7 @@ int main(void) {
     // Unload all resources
     UnloadRenderer(renderer);
     UnloadScene(scene);
-    UnloadProps(props);
+    UnloadProps(&props);
     
     CloseWindow();                // Close window and OpenGL context
     //--------------------------------------------------------------------------------------

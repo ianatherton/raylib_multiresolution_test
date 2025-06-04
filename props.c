@@ -53,6 +53,8 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     // Initialize LOS optimization fields
     props.lastCameraPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
     props.needsLOSUpdate = true;  // Force initial update
+    props.visibleCount = 0;
+    props.renderedCount = 0;
     
     return props;
 }
@@ -74,68 +76,50 @@ void AddModelProp(Props* props, Vector3 position, int index) {
 }
 
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
-    // Check if we need to update LOS based on camera movement
     float cameraMoveDistance = Vector3Distance(camera.position, props->lastCameraPosition);
     bool shouldUpdate = props->needsLOSUpdate || (cameraMoveDistance >= LOS_MIN_CAMERA_MOVE);
     
-    // If no update needed, return early
-    if (!shouldUpdate) {
-        return;
-    }
+    if (!shouldUpdate) return;
     
-    // Update the last camera position and reset the flag
     props->lastCameraPosition = camera.position;
     props->needsLOSUpdate = false;
-    
-    // Debug: Print when LOS update happens
-    printf("LOS Update: Camera moved %.2f units\n", cameraMoveDistance);
     
     int visibleCount = 0;
     int totalCount = 0;
     
     for (int i = 0; i < props->count; i++) {
-        // Skip props that aren't active
-        if (props->props[i].position.x == 0.0f && 
-            props->props[i].position.y == 0.0f && 
-            props->props[i].position.z == 0.0f) {
-            continue;
-        }
+        // Skip inactive props (position at origin)
+        if (props->props[i].position.x == 0 && 
+            props->props[i].position.y == 0 && 
+            props->props[i].position.z == 0) continue;
         
         totalCount++;
         
-        // Direction vector from camera to prop
+        // Check if prop is beyond max distance
         Vector3 direction = Vector3Subtract(props->props[i].position, camera.position);
         float distance = Vector3Length(direction);
         
-        // Skip props that are too far away (automatically mark as not visible)
         if (distance > LOS_MAX_PROP_DISTANCE) {
             props->props[i].visible = false;
             continue;
         }
         
-        // Default to visible for props within range
+        // Default to visible
         props->props[i].visible = true;
+        visibleCount++;
         
-        // Normalize direction for ray casting
+        // Check for wall occlusion
         direction = Vector3Normalize(direction);
+        Ray ray = {camera.position, direction};
         
-        // Create a ray from camera position toward the prop
-        Ray ray = { camera.position, direction };
-        
-        // Check for intersection with each wall
         for (int j = 0; j < scene.numWalls; j++) {
-            // Check for collision with the wall's bounding box
             RayCollision collision = GetRayCollisionBox(ray, scene.wallBoxes[j]);
             
-            // If there's a hit and it's closer than the prop, the prop is occluded
             if (collision.hit && collision.distance < distance) {
                 props->props[i].visible = false;
+                visibleCount--;
                 break;
             }
-        }
-        
-        if (props->props[i].visible) {
-            visibleCount++;
         }
         
         // Debug: Print ray and collision info for the first prop
@@ -147,23 +131,61 @@ void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
         }
     }
     
-    // Print visibility statistics
-    printf("Props visible: %d/%d (%.1f%%)\n", visibleCount, totalCount, 
+    // Store the visible count
+    props->visibleCount = visibleCount;
+    
+    // Debug output - show how many props are visible
+    printf("LOS Update: Camera moved %.2f units\n", cameraMoveDistance);
+    printf("Props visible: %d/%d (%.1f%%)\n", 
+           visibleCount, totalCount, 
            totalCount > 0 ? (float)visibleCount / totalCount * 100.0f : 0.0f);
 }
 
-void DrawProps(Props props, Camera3D camera) {
+// Helper function to check if a point is inside the camera frustum
+bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin) {
+    // Convert point to view space
+    Matrix viewMatrix = MatrixLookAt(camera.position, camera.target, camera.up);
+    Vector3 viewSpacePoint = Vector3Transform(point, viewMatrix);
+    
+    // Early discard points behind the camera
+    if (viewSpacePoint.z > 0) return false;
+    
+    // Calculate frustum boundaries at the point's depth
+    float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
+    float nearPlaneHeight = 2.0f * fabsf(viewSpacePoint.z) * tanf(camera.fovy * 0.5f * DEG2RAD);
+    float nearPlaneWidth = nearPlaneHeight * aspect;
+    
+    // Add margin to frustum boundaries
+    nearPlaneWidth += margin;
+    nearPlaneHeight += margin;
+    
+    // Check if point is within frustum boundaries
+    return (fabsf(viewSpacePoint.x) < nearPlaneWidth * 0.5f) && 
+           (fabsf(viewSpacePoint.y) < nearPlaneHeight * 0.5f);
+}
+
+void DrawProps(Props* props, Camera3D camera) {
+    // Reset rendered count
+    props->renderedCount = 0;
+    
     // Draw props based on their type
-    for (int i = 0; i < props.count; i++) {
-        // Skip props that aren't visible
-        if (!props.props[i].visible) continue;
+    for (int i = 0; i < props->count; i++) {
+        // Skip props that aren't visible due to LOS
+        if (!props->props[i].visible) continue;
+        
+        // Frustum culling - skip props outside the camera frustum
+        // Use a small margin (1.0f) to avoid popping at frustum edges
+        if (!IsPointInFrustum(props->props[i].position, camera, 1.0f)) continue;
+        
+        // Increment rendered count
+        props->renderedCount++;
         
         // Draw based on prop type
-        switch (props.props[i].type) {
+        switch (props->props[i].type) {
             case PROP_BILLBOARD:
                 // Draw as billboard
-                DrawBillboardRec(camera, props.billboardTexture, props.billboardSourceRec, 
-                                props.props[i].position, props.billboardSize, WHITE);
+                DrawBillboardRec(camera, props->billboardTexture, props->billboardSourceRec, 
+                                props->props[i].position, props->billboardSize, WHITE);
                 break;
                 
             case PROP_MODEL:
@@ -173,8 +195,8 @@ void DrawProps(Props props, Camera3D camera) {
                 float rotationAngle = (float)((i * 37) % 360); // Different rotation for each rock
                 
                 // Draw the model with position, rotation and scale
-                DrawModelEx(props.model, 
-                           props.props[i].position,       // Position
+                DrawModelEx(props->model, 
+                           props->props[i].position,       // Position
                            (Vector3){0.0f, 1.0f, 0.0f},  // Rotation axis (Y-up)
                            rotationAngle,                // Rotation angle
                            (Vector3){scale, scale, scale}, // Scale
@@ -184,30 +206,41 @@ void DrawProps(Props props, Camera3D camera) {
     }
 }
 
-void DrawPropsDebug(Props props, Camera3D camera) {
-    // Draw rays from camera to props
-    for (int i = 0; i < props.count; i++) {
+void DrawPropsDebug(Props* props, Camera3D camera) {
+    for (int i = 0; i < props->count; i++) {
         // Skip props that aren't active
-        if (props.props[i].position.x == 0.0f && 
-            props.props[i].position.y == 0.0f && 
-            props.props[i].position.z == 0.0f) {
+        if (props->props[i].position.x == 0.0f && 
+            props->props[i].position.y == 0.0f && 
+            props->props[i].position.z == 0.0f) {
             continue;
         }
         
-        // Draw ray with color based on visibility
-        Color rayColor = props.props[i].visible ? GREEN : RED;
-        DrawLine3D(camera.position, props.props[i].position, rayColor);
+        // Draw ray from camera to prop
+        Vector3 direction = Vector3Subtract(props->props[i].position, camera.position);
+        float distance = Vector3Length(direction);
         
-        // Draw a small sphere at the prop position
-        DrawSphere(props.props[i].position, 0.1f, props.props[i].type == PROP_BILLBOARD ? BLUE : YELLOW);
+        // Skip props that are too far away
+        if (distance > LOS_MAX_PROP_DISTANCE) {
+            continue;
+        }
+        
+        // Draw ray in green if visible, red if not
+        Color rayColor = props->props[i].visible ? GREEN : RED;
+        DrawLine3D(camera.position, props->props[i].position, rayColor);
+        
+        // Draw sphere at prop position - blue for billboards, yellow for models
+        Color sphereColor = props->props[i].type == PROP_BILLBOARD ? BLUE : YELLOW;
+        DrawSphere(props->props[i].position, 0.1f, sphereColor);
     }
 }
 
-void UnloadProps(Props props) {
-    // Unload textures and models
-    UnloadTexture(props.billboardTexture);
-    UnloadModel(props.model);
+void UnloadProps(Props* props) {
+    // Unload textures
+    UnloadTexture(props->billboardTexture);
     
-    // Free allocated memory
-    free(props.props);
+    // Unload model
+    UnloadModel(props->model);
+    
+    // Free memory
+    free(props->props);
 }

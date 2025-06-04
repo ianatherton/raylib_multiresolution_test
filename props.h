@@ -27,6 +27,8 @@ typedef struct {
     Model model;                 // 3D model for model props
     Vector3 lastCameraPosition;  // Last camera position when LOS was checked
     bool needsLOSUpdate;         // Flag to force LOS update
+    int visibleCount;            // Number of props visible after LOS check
+    int renderedCount;           // Number of props actually rendered (after frustum culling)
 } Props;
 
 // Initialize props with billboard and model data
@@ -41,13 +43,16 @@ void AddModelProp(Props* props, Vector3 position, int index);
 // Update prop visibility based on line of sight
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera);
 
+// Check if a point is within the camera frustum (with margin)
+bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin);
+
 // Draw visible props
-void DrawProps(Props props, Camera3D camera);
+void DrawProps(Props* props, Camera3D camera);
 
 // Draw debug visualization for props
-void DrawPropsDebug(Props props, Camera3D camera);
+void DrawPropsDebug(Props* props, Camera3D camera);
 
 // Unload prop resources
-void UnloadProps(Props props);
+void UnloadProps(Props* props);
 
 #endif // PROPS_H

@@ -27,7 +27,7 @@ void BeginQuarterResRender(Renderer renderer);
 void EndQuarterResRender(void);
 
 // Composite both render targets to screen
-void CompositeFinalFrame(Renderer renderer);
+void CompositeFinalFrame(Renderer renderer, int renderedProps, int visibleProps);
 
 // Unload renderer resources
 void UnloadRenderer(Renderer renderer);
