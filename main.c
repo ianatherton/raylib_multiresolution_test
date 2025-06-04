@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "raymath.h" // For Vector3, Matrix, etc.
 #include <stdio.h>   // For printf (debugging)
+#include <stdbool.h>  // For boolean type
 
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
@@ -75,6 +76,37 @@ int main(void) {
     int numGrassProps = sizeof(grassPositions)/sizeof(grassPositions[0]);
     Rectangle grassSourceRec = { 0.0f, 0.0f, (float)grassTexture.width, (float)grassTexture.height };
     Vector2 grassSize = { 1.0f, 1.0f }; // Size of the billboard
+    
+    // Array to track visibility of each prop
+    bool propVisible[sizeof(grassPositions)/sizeof(grassPositions[0])];
+    
+    // Define wall collision boxes directly
+    BoundingBox wallBoxes[] = {
+        // Front wall (+Z)
+        (BoundingBox){
+            (Vector3){ -roomWidth/2.0f, 0.0f, roomLength/2.0f - wallThickness/2.0f },
+            (Vector3){ roomWidth/2.0f, wallHeight, roomLength/2.0f + wallThickness/2.0f }
+        },
+        // Back wall (-Z)
+        (BoundingBox){
+            (Vector3){ -roomWidth/2.0f, 0.0f, -roomLength/2.0f - wallThickness/2.0f },
+            (Vector3){ roomWidth/2.0f, wallHeight, -roomLength/2.0f + wallThickness/2.0f }
+        },
+        // Left wall (-X)
+        (BoundingBox){
+            (Vector3){ -roomWidth/2.0f - wallThickness/2.0f, 0.0f, -roomLength/2.0f },
+            (Vector3){ -roomWidth/2.0f + wallThickness/2.0f, wallHeight, roomLength/2.0f }
+        },
+        // Right wall (+X)
+        (BoundingBox){
+            (Vector3){ roomWidth/2.0f - wallThickness/2.0f, 0.0f, -roomLength/2.0f },
+            (Vector3){ roomWidth/2.0f + wallThickness/2.0f, wallHeight, roomLength/2.0f }
+        }
+    };
+    int numWalls = sizeof(wallBoxes)/sizeof(wallBoxes[0]);
+    
+    // Add debug visualization for collision boxes
+    bool showDebugBoxes = false;  // Set to true to visualize collision boxes
 
     DisableCursor(); // Hide cursor for FPS controls
 
@@ -86,6 +118,44 @@ int main(void) {
         // Update
         //----------------------------------------------------------------------------------
         UpdateCamera(&camera, CAMERA_FIRST_PERSON); // Use Raylib's first person camera
+
+        // Toggle debug visualization with F1 key
+        if (IsKeyPressed(KEY_F1)) showDebugBoxes = !showDebugBoxes;
+        
+        // Check line of sight for each prop
+        for (int i = 0; i < numGrassProps; i++) {
+            // Default to visible
+            propVisible[i] = true;
+            
+            // Direction vector from camera to prop
+            Vector3 direction = Vector3Subtract(grassPositions[i], camera.position);
+            float distance = Vector3Length(direction);
+            direction = Vector3Normalize(direction);
+            
+            // Create a ray from camera position toward the prop
+            Ray ray = { camera.position, direction };
+            
+            // Check for intersection with each wall
+            for (int j = 0; j < numWalls; j++) {
+                // Check for collision with the wall's bounding box
+                RayCollision collision = GetRayCollisionBox(ray, wallBoxes[j]);
+                
+                // If there's a hit and it's closer than the prop, the prop is occluded
+                if (collision.hit && collision.distance < distance) {
+                    propVisible[i] = false;
+                    break;
+                }
+            }
+            
+            // Debug: Print ray and collision info for the first prop
+            if (i == 0) {
+                // Print camera position and prop position
+                printf("Camera: (%.2f, %.2f, %.2f) -> Prop: (%.2f, %.2f, %.2f), Visible: %s\n", 
+                       camera.position.x, camera.position.y, camera.position.z,
+                       grassPositions[i].x, grassPositions[i].y, grassPositions[i].z,
+                       propVisible[i] ? "Yes" : "No");
+            }
+        }
 
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
@@ -111,6 +181,19 @@ int main(void) {
                 DrawModel(wallModelEW, (Vector3){ -roomWidth/2.0f, wallHeight/2.0f, 0.0f }, 1.0f, WHITE);
                 // Right wall (+X)
                 DrawModel(wallModelEW, (Vector3){ roomWidth/2.0f, wallHeight/2.0f, 0.0f }, 1.0f, WHITE);
+                
+                // Draw debug bounding boxes if enabled
+                if (showDebugBoxes) {
+                    for (int i = 0; i < numWalls; i++) {
+                        DrawBoundingBox(wallBoxes[i], RED);
+                    }
+                    
+                    // Draw rays from camera to props
+                    for (int i = 0; i < numGrassProps; i++) {
+                        Color rayColor = propVisible[i] ? GREEN : RED;
+                        DrawLine3D(camera.position, grassPositions[i], rayColor);
+                    }
+                }
 
 
             EndMode3D();
@@ -121,9 +204,11 @@ int main(void) {
             ClearBackground(BLANK); // Clear with transparency
             BeginMode3D(camera);
 
-                // Draw grass props as billboards
+                // Draw grass props as billboards, but only if visible
                 for (int i = 0; i < numGrassProps; i++) {
-                    DrawBillboardRec(camera, grassTexture, grassSourceRec, grassPositions[i], grassSize, WHITE);
+                    if (propVisible[i]) {
+                        DrawBillboardRec(camera, grassTexture, grassSourceRec, grassPositions[i], grassSize, WHITE);
+                    }
                 }
 
             EndMode3D();
@@ -160,6 +245,8 @@ int main(void) {
     UnloadModel(floorModel);
     UnloadModel(wallModelNS);
     UnloadModel(wallModelEW);
+    
+    // No meshes to unload for collision detection
 
     // Unload textures
     UnloadTexture(wallTexture);
