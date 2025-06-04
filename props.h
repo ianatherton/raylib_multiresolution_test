@@ -12,6 +12,8 @@ typedef struct {
     Rectangle sourceRec;
     Vector2 size;
     bool* visible;
+    Vector3 lastCameraPosition;  // Last camera position when LOS was checked
+    bool needsLOSUpdate;        // Flag to force LOS update
 } Props;
 
 // Initialize props with positions and texture

@@ -30,17 +30,45 @@ Props InitProps(Vector3* positions, int count, const char* texturePath) {
         props.visible[i] = true;
     }
     
+    // Initialize LOS optimization fields
+    props.lastCameraPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
+    props.needsLOSUpdate = true;  // Force initial update
+    
     return props;
 }
 
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
+    // Check if we need to update LOS based on camera movement
+    float cameraMoveDistance = Vector3Distance(camera.position, props->lastCameraPosition);
+    bool shouldUpdate = props->needsLOSUpdate || (cameraMoveDistance >= LOS_MIN_CAMERA_MOVE);
+    
+    // If no update needed, return early
+    if (!shouldUpdate) {
+        return;
+    }
+    
+    // Update the last camera position and reset the flag
+    props->lastCameraPosition = camera.position;
+    props->needsLOSUpdate = false;
+    
+    // Debug: Print when LOS update happens
+    printf("LOS Update: Camera moved %.2f units\n", cameraMoveDistance);
+    
     for (int i = 0; i < props->count; i++) {
-        // Default to visible
-        props->visible[i] = true;
-        
         // Direction vector from camera to prop
         Vector3 direction = Vector3Subtract(props->positions[i], camera.position);
         float distance = Vector3Length(direction);
+        
+        // Skip props that are too far away (automatically mark as not visible)
+        if (distance > LOS_MAX_PROP_DISTANCE) {
+            props->visible[i] = false;
+            continue;
+        }
+        
+        // Default to visible for props within range
+        props->visible[i] = true;
+        
+        // Normalize direction for ray casting
         direction = Vector3Normalize(direction);
         
         // Create a ray from camera position toward the prop
