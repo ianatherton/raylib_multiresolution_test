@@ -20,6 +20,9 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     props.billboardTexture = LoadTexture(billboardTexturePath);
     if (props.billboardTexture.id == 0) {
         printf("Failed to load billboard texture: %s\n", billboardTexturePath);
+    } else {
+        // Apply texture filtering to billboard texture
+        SetTextureFilter(props.billboardTexture, PROPS_TEXTURE_FILTER_MODE);
     }
     
     // Set up source rectangle for the billboard texture
@@ -38,6 +41,9 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
             printf("Failed to load rock texture: %s\n", modelTexturePath);
         } else {
             printf("Successfully loaded rock texture: %s (ID: %u)\n", modelTexturePath, modelTexture.id);
+            
+            // Apply texture filtering to model texture
+            SetTextureFilter(modelTexture, PROPS_TEXTURE_FILTER_MODE);
             
             // Apply texture to all materials in the model
             for (int i = 0; i < props.model.materialCount; i++) {

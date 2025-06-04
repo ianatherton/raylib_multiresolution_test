@@ -23,6 +23,10 @@ Scene InitScene(float width, float length, float height, float thickness,
         printf("Failed to load floor texture: %s\n", floorTexturePath);
     }
     
+    // Apply texture filtering to scene textures
+    if (scene.wallTexture.id > 0) SetTextureFilter(scene.wallTexture, MAIN_TEXTURE_FILTER_MODE);
+    if (scene.floorTexture.id > 0) SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
+    
     // Create models for the environment
     scene.floorModel = LoadModelFromMesh(GenMeshCube(width, thickness, length));
     scene.wallModelNS = LoadModelFromMesh(GenMeshCube(width, height, thickness)); // North/South walls

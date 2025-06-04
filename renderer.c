@@ -7,6 +7,10 @@ Renderer InitRenderer(int width, int height, float propsScale) {
     renderer.fullResTarget = LoadRenderTexture(width, height);
     renderer.quarterResTarget = LoadRenderTexture(width * propsScale, height * propsScale);
     
+    // Apply texture filtering to both render targets with their respective modes
+    SetTextureFilter(renderer.fullResTarget.texture, MAIN_TEXTURE_FILTER_MODE);
+    SetTextureFilter(renderer.quarterResTarget.texture, PROPS_TEXTURE_FILTER_MODE);
+    
     return renderer;
 }
 
