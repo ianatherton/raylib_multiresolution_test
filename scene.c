@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 Scene InitScene(float width, float length, float height, float thickness, 
-                const char* wallTexturePath, const char* floorTexturePath) {
+                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader) {
     Scene scene = {0};
     
     // Store dimensions
@@ -42,6 +42,17 @@ Scene InitScene(float width, float length, float height, float thickness,
     } else {
         scene.wallModelNS.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGRAY; // Fallback color
         scene.wallModelEW.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGRAY; // Fallback color
+    }
+
+    // Assign lighting shader to all scene models' materials with safety checks
+    if (scene.floorModel.materialCount > 0) {
+        scene.floorModel.materials[0].shader = lightingShader;
+    }
+    if (scene.wallModelNS.materialCount > 0) {
+        scene.wallModelNS.materials[0].shader = lightingShader;
+    }
+    if (scene.wallModelEW.materialCount > 0) {
+        scene.wallModelEW.materials[0].shader = lightingShader;
     }
     
     // Define wall collision boxes

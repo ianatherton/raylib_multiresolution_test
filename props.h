@@ -32,7 +32,7 @@ typedef struct {
 } Props;
 
 // Initialize props with billboard and model data
-Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath);
+Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, Shader lightingShader);
 
 // Add a billboard prop at the specified position
 void AddBillboardProp(Props* props, Vector3 position, int index);

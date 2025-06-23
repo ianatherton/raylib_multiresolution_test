@@ -2,10 +2,20 @@
 #include "scene.h"  
 #include "props.h"
 #include "renderer.h"
+#include "lighting.h"
 #include <stdlib.h> // For rand() and srand()
 #include <time.h>   // For time()
 
 int main(void) {
+    // Create a single point light above the scene
+    Light light = {
+        .position = (Vector3){0.0f, 6.0f, 0.0f},
+        .color = WHITE,
+        .intensity = 1.0f
+    };
+
+    // Initialization
+
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Raylib First Person Demo");
@@ -33,7 +43,8 @@ int main(void) {
     // Initialize scene
     Scene scene = InitScene(roomWidth, roomLength, wallHeight, wallThickness, 
                            "raw-assets/tiling_dungeon_brickwall01.png", 
-                           "raw-assets/tiling_dungeon_floor01.png");
+                           "raw-assets/tiling_dungeon_floor01.png",
+                           renderer.lightingShader);
 
     // Define number of props to create
     const int numGrassProps = 150;  // 150 grass billboards
@@ -49,7 +60,8 @@ int main(void) {
         numRockProps,
         "raw-assets/grass01_c.png",    // Grass texture
         "raw-assets/rock.glb",         // Rock model
-        "raw-assets/tilingrock01_c.png" // Rock texture
+        "raw-assets/tilingrock01_c.png", // Rock texture
+        renderer.lightingShader
     );
     
     // Calculate usable room area (slightly inside the walls)
@@ -102,6 +114,23 @@ int main(void) {
         // Update prop visibility based on line of sight
         UpdatePropVisibility(&props, scene, gameState.camera);
 
+        // Update light position in renderer
+        renderer.lightPosition = light.position;
+        
+        // Update lighting uniforms
+        int locLightPos = GetShaderLocation(renderer.lightingShader, "lightPos");
+        int locLightColor = GetShaderLocation(renderer.lightingShader, "lightColor");
+        int locViewPos = GetShaderLocation(renderer.lightingShader, "viewPos");
+        
+        if (locLightPos >= 0 && locLightColor >= 0 && locViewPos >= 0) {
+            Vector3 lightPos = light.position;
+            Vector3 viewPos = gameState.camera.position;
+            Vector3 lightColor = ColorToVec3(light.color);
+            SetShaderValue(renderer.lightingShader, locLightPos, &lightPos, SHADER_UNIFORM_VEC3);
+            SetShaderValue(renderer.lightingShader, locLightColor, &lightColor, SHADER_UNIFORM_VEC3);
+            SetShaderValue(renderer.lightingShader, locViewPos, &viewPos, SHADER_UNIFORM_VEC3);
+        }
+
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
 
@@ -136,11 +165,11 @@ int main(void) {
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
-    // Unload all resources
-    UnloadRenderer(renderer);
+    // Unload resources
     UnloadScene(scene);
     UnloadProps(&props);
-    
+    UnloadRenderer(renderer);  // This now handles unloading the shader
+
     CloseWindow();                // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
 

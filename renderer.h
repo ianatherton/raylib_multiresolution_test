@@ -9,6 +9,8 @@
 typedef struct {
     RenderTexture2D fullResTarget;
     RenderTexture2D quarterResTarget;
+    Shader lightingShader;         // Lighting shader
+    Vector3 lightPosition;         // Light position
 } Renderer;
 
 // Initialize renderer with screen dimensions

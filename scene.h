@@ -24,7 +24,7 @@ typedef struct {
 
 // Initialize scene with dimensions and textures
 Scene InitScene(float width, float length, float height, float thickness, 
-                const char* wallTexturePath, const char* floorTexturePath);
+                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader);
 
 // Draw scene (walls, floor)
 void DrawScene(Scene scene);

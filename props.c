@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath) {
+Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, Shader lightingShader) {
     Props props = {0};
     int totalCount = billboardCount + modelCount;
     
@@ -48,6 +48,13 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
             // Apply texture to all materials in the model
             for (int i = 0; i < props.model.materialCount; i++) {
                 SetMaterialTexture(&props.model.materials[i], MATERIAL_MAP_DIFFUSE, modelTexture);
+            }
+
+            // Assign lighting shader to all model materials with safety checks
+            if (props.model.materialCount > 0 && props.model.materials != NULL) {
+                for (int i = 0; i < props.model.materialCount; i++) {
+                    props.model.materials[i].shader = lightingShader;
+                }
             }
             
             // Debug info about the model

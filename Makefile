@@ -6,7 +6,7 @@ CFLAGS = -Wall -Wextra -std=c99 -I/usr/local/include -DPLATFORM_DESKTOP
 LDFLAGS = -L/usr/local/lib -lraylib -lm -lpthread -ldl -lrt -lX11
 
 # Source files
-SRCS = main.c scene.c props.c renderer.c
+SRCS = main.c scene.c props.c renderer.c lighting.c
 
 # Object files
 OBJS = $(SRCS:.c=.o)

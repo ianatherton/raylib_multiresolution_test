@@ -11,6 +11,22 @@ Renderer InitRenderer(int width, int height, float propsScale) {
     SetTextureFilter(renderer.fullResTarget.texture, MAIN_TEXTURE_FILTER_MODE);
     SetTextureFilter(renderer.quarterResTarget.texture, PROPS_TEXTURE_FILTER_MODE);
     
+    // Load and initialize the lighting shader
+    renderer.lightingShader = LoadShader(
+        "resources/shaders/lighting.vs",
+        "resources/shaders/lighting.fs"
+    );
+    
+    // Check if shader loaded correctly
+    if (renderer.lightingShader.id == 0) {
+        printf("ERROR: Failed to load lighting shader!\n");
+    } else {
+        printf("INFO: Lighting shader loaded successfully (ID: %u)\n", renderer.lightingShader.id);
+    }
+    
+    // Set default light position
+    renderer.lightPosition = (Vector3){0.0f, 6.0f, 0.0f};
+    
     return renderer;
 }
 
@@ -65,4 +81,5 @@ void CompositeFinalFrame(Renderer renderer, int renderedProps, int visibleProps)
 void UnloadRenderer(Renderer renderer) {
     UnloadRenderTexture(renderer.fullResTarget);
     UnloadRenderTexture(renderer.quarterResTarget);
+    UnloadShader(renderer.lightingShader);
 }
