@@ -1,9 +1,11 @@
 #include "props.h"
 #include <stdlib.h>
 #include <string.h>
+#include "rlgl.h"   // Required for rlDisableDepthMask and rlEnableDepthMask
 
-Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, Shader lightingShader) {
+Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader) {
     Props props = {0};
+    props.rockHasNormalMap = false;
     int totalCount = billboardCount + modelCount;
     
     // Allocate memory for props array
@@ -28,39 +30,57 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     // Set up source rectangle for the billboard texture
     props.billboardSourceRec = (Rectangle){ 0.0f, 0.0f, (float)props.billboardTexture.width, (float)props.billboardTexture.height };
     
-    // Default billboard size
-    props.billboardSize = (Vector2){ 1.0f, 1.0f };
+    // Taller billboard size for better grass visibility
+    props.billboardSize = (Vector2){ 1.0f, 1.5f };
     
     // Load 3D model for rocks
     props.model = LoadModel(modelPath);
-    
-    // Load model texture if provided
+    if (props.model.meshCount == 0) {
+        printf("Failed to load rock model: %s\n", modelPath);
+    }
+
+    for (int mi = 0; mi < props.model.meshCount; mi++) {
+        GenMeshTangents(&props.model.meshes[mi]);
+        UploadMesh(&props.model.meshes[mi], false);
+    }
+
+    Texture2D rockDiffuse = {0};
     if (modelTexturePath != NULL && strlen(modelTexturePath) > 0) {
-        Texture2D modelTexture = LoadTexture(modelTexturePath);
-        if (modelTexture.id == 0) {
+        rockDiffuse = LoadTexture(modelTexturePath);
+        if (rockDiffuse.id == 0) {
             printf("Failed to load rock texture: %s\n", modelTexturePath);
         } else {
-            printf("Successfully loaded rock texture: %s (ID: %u)\n", modelTexturePath, modelTexture.id);
-            
-            // Apply texture filtering to model texture
-            SetTextureFilter(modelTexture, PROPS_TEXTURE_FILTER_MODE);
-            
-            // Apply texture to all materials in the model
-            for (int i = 0; i < props.model.materialCount; i++) {
-                SetMaterialTexture(&props.model.materials[i], MATERIAL_MAP_DIFFUSE, modelTexture);
-            }
-
-            // Assign lighting shader to all model materials with safety checks
-            if (props.model.materialCount > 0 && props.model.materials != NULL) {
-                for (int i = 0; i < props.model.materialCount; i++) {
-                    props.model.materials[i].shader = lightingShader;
-                }
-            }
-            
-            // Debug info about the model
-            printf("Rock model has %d materials and %d meshes\n", 
-                   props.model.materialCount, props.model.meshCount);
+            SetTextureFilter(rockDiffuse, PROPS_TEXTURE_FILTER_MODE);
+            SetTextureWrap(rockDiffuse, TEXTURE_WRAP_REPEAT); // allow uvScale > 1 to tile
+            printf("Rock texture applied: %s (ID: %u)\n", modelTexturePath, rockDiffuse.id);
         }
+    }
+
+    Texture2D rockNormal = {0};
+    if (modelNormalMapPath != NULL && strlen(modelNormalMapPath) > 0) {
+        rockNormal = LoadTexture(modelNormalMapPath);
+        if (rockNormal.id == 0) {
+            printf("Failed to load rock normal map: %s\n", modelNormalMapPath);
+        } else {
+            SetTextureFilter(rockNormal, PROPS_TEXTURE_FILTER_MODE);
+            SetTextureWrap(rockNormal, TEXTURE_WRAP_REPEAT);
+            props.rockHasNormalMap = true;
+            printf("Rock normal map: %s (ID: %u)\n", modelNormalMapPath, rockNormal.id);
+        }
+    }
+
+    if (props.model.materialCount > 0 && props.model.materials != NULL) {
+        for (int i = 0; i < props.model.materialCount; i++) {
+            if (rockDiffuse.id > 0) {
+                props.model.materials[i].maps[MATERIAL_MAP_DIFFUSE].texture = rockDiffuse;
+                props.model.materials[i].maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+            }
+            if (rockNormal.id > 0) {
+                props.model.materials[i].maps[MATERIAL_MAP_NORMAL].texture = rockNormal;
+            }
+            props.model.materials[i].shader = lightingShader;
+        }
+        printf("Rock model: %d materials, %d meshes\n", props.model.materialCount, props.model.meshCount);
     }
     
     // Initialize LOS optimization fields
@@ -177,11 +197,32 @@ bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin) {
            (fabsf(viewSpacePoint.y) < nearPlaneHeight * 0.5f);
 }
 
+// Structure to store billboard data for depth sorting
+typedef struct {
+    int index;          // Original index in props array
+    float distance;     // Distance from camera
+} BillboardDepthInfo;
+
+// Comparison function for qsort (sort from far to near)
+int CompareBillboardDepth(const void* a, const void* b) {
+    BillboardDepthInfo* billboardA = (BillboardDepthInfo*)a;
+    BillboardDepthInfo* billboardB = (BillboardDepthInfo*)b;
+    
+    // Sort from far to near (descending order)
+    if (billboardA->distance > billboardB->distance) return -1;
+    if (billboardA->distance < billboardB->distance) return 1;
+    return 0;
+}
+
 void DrawProps(Props* props, Camera3D camera) {
     // Reset rendered count
     props->renderedCount = 0;
     
-    // Draw props based on their type
+    // Arrays to store visible billboards and models for separate processing
+    BillboardDepthInfo* visibleBillboards = (BillboardDepthInfo*)malloc(props->count * sizeof(BillboardDepthInfo));
+    int billboardCount = 0;
+    
+    // First pass: Collect all visible props and calculate distances
     for (int i = 0; i < props->count; i++) {
         // Skip props that aren't visible due to LOS
         if (!props->props[i].visible) continue;
@@ -193,30 +234,46 @@ void DrawProps(Props* props, Camera3D camera) {
         // Increment rendered count
         props->renderedCount++;
         
-        // Draw based on prop type
-        switch (props->props[i].type) {
-            case PROP_BILLBOARD:
-                // Draw as billboard
-                DrawBillboardRec(camera, props->billboardTexture, props->billboardSourceRec, 
-                                props->props[i].position, props->billboardSize, WHITE);
-                break;
-                
-            case PROP_MODEL:
-                // Draw as 3D model with proper positioning and scale
-                // Add a small random rotation to make each rock look different
-                float scale = 0.5f;
-                float rotationAngle = (float)((i * 37) % 360); // Different rotation for each rock
-                
-                // Draw the model with position, rotation and scale
-                DrawModelEx(props->model, 
-                           props->props[i].position,       // Position
-                           (Vector3){0.0f, 1.0f, 0.0f},  // Rotation axis (Y-up)
-                           rotationAngle,                // Rotation angle
-                           (Vector3){scale, scale, scale}, // Scale
-                           WHITE);                       // Tint
-                break;
+        // For billboards, store for depth sorting
+        if (props->props[i].type == PROP_BILLBOARD) {
+            visibleBillboards[billboardCount].index = i;
+            visibleBillboards[billboardCount].distance = Vector3Distance(camera.position, props->props[i].position);
+            billboardCount++;
+        } else if (props->props[i].type == PROP_MODEL) {
+            // Draw models immediately (they have their own depth testing)
+            float scale = 0.5f;
+            float rotationAngle = (float)((i * 37) % 360); // Different rotation for each rock
+            
+            // Draw the model with position, rotation and scale
+            DrawModelEx(props->model, 
+                       props->props[i].position,       // Position
+                       (Vector3){0.0f, 1.0f, 0.0f},  // Rotation axis (Y-up)
+                       rotationAngle,                // Rotation angle
+                       (Vector3){scale, scale, scale}, // Scale
+                       WHITE);                       // Tint
         }
     }
+    
+    // Sort billboards by distance (far to near)
+    if (billboardCount > 0) {
+        qsort(visibleBillboards, billboardCount, sizeof(BillboardDepthInfo), CompareBillboardDepth);
+        
+        // Enable alpha blending for proper transparency
+        rlDisableDepthMask();  // Disable depth writes
+        
+        // Draw billboards in sorted order (far to near)
+        for (int i = 0; i < billboardCount; i++) {
+            int index = visibleBillboards[i].index;
+            DrawBillboardRec(camera, props->billboardTexture, props->billboardSourceRec, 
+                            props->props[index].position, props->billboardSize, WHITE);
+        }
+        
+        // Restore depth mask
+        rlEnableDepthMask();
+    }
+    
+    // Free allocated memory
+    free(visibleBillboards);
 }
 
 void DrawPropsDebug(Props* props, Camera3D camera) {

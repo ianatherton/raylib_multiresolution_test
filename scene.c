@@ -27,10 +27,18 @@ Scene InitScene(float width, float length, float height, float thickness,
     if (scene.wallTexture.id > 0) SetTextureFilter(scene.wallTexture, MAIN_TEXTURE_FILTER_MODE);
     if (scene.floorTexture.id > 0) SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
     
-    // Create models for the environment
-    scene.floorModel = LoadModelFromMesh(GenMeshCube(width, thickness, length));
-    scene.wallModelNS = LoadModelFromMesh(GenMeshCube(width, height, thickness)); // North/South walls
-    scene.wallModelEW = LoadModelFromMesh(GenMeshCube(thickness, height, length)); // East/West walls
+    Mesh floorMesh = GenMeshCube(width, thickness, length);
+    GenMeshTangents(&floorMesh);
+    scene.floorModel = LoadModelFromMesh(floorMesh);
+    // Do not UnloadMesh(floorMesh): LoadModelFromMesh shallow-copies Mesh; GPU data is owned by the Model until UnloadModel.
+
+    Mesh wallNS = GenMeshCube(width, height, thickness);
+    GenMeshTangents(&wallNS);
+    scene.wallModelNS = LoadModelFromMesh(wallNS);
+
+    Mesh wallEW = GenMeshCube(thickness, height, length);
+    GenMeshTangents(&wallEW);
+    scene.wallModelEW = LoadModelFromMesh(wallEW);
     
     // Assign textures to models
     if (scene.floorTexture.id > 0) scene.floorModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.floorTexture;

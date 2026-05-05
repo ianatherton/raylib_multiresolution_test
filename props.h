@@ -25,6 +25,7 @@ typedef struct {
     Rectangle billboardSourceRec; // Source rectangle for billboard texture
     Vector2 billboardSize;       // Size of billboards
     Model model;                 // 3D model for model props
+    bool rockHasNormalMap;       // Lighting shader samples texture1 when drawing rocks
     Vector3 lastCameraPosition;  // Last camera position when LOS was checked
     bool needsLOSUpdate;         // Flag to force LOS update
     int visibleCount;            // Number of props visible after LOS check
@@ -32,7 +33,7 @@ typedef struct {
 } Props;
 
 // Initialize props with billboard and model data
-Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, Shader lightingShader);
+Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader);
 
 // Add a billboard prop at the specified position
 void AddBillboardProp(Props* props, Vector3 position, int index);

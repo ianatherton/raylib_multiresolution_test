@@ -47,8 +47,8 @@ int main(void) {
                            renderer.lightingShader);
 
     // Define number of props to create
-    const int numGrassProps = 150;  // 150 grass billboards
-    const int numRockProps = 50;    // 50 rock models
+    const int numGrassProps = 1000;  // 10800 grass billboards (72x original 150)
+    const int numRockProps = 500;    // 3600 rock models (72x original 50)
     const int totalProps = numGrassProps + numRockProps;
     
     // Initialize random number generator
@@ -58,9 +58,10 @@ int main(void) {
     Props props = InitProps(
         numGrassProps,
         numRockProps,
-        "raw-assets/grass01_c.png",    // Grass texture
-        "raw-assets/rock.glb",         // Rock model
-        "raw-assets/tilingrock01_c.png", // Rock texture
+        "raw-assets/grass01_c.png",
+        "raw-assets/rock.glb",
+        "raw-assets/tilingrock02_c.png",
+        "raw-assets/tilingrock02_n.png",
         renderer.lightingShader
     );
     
@@ -88,8 +89,7 @@ int main(void) {
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
         
-        // Create rock prop on the floor
-        Vector3 position = (Vector3){ x, 0.0f, z };
+        Vector3 position = (Vector3){ x, PROPS_ROCK_Y_OFFSET, z };
         AddModelProp(&props, position, numGrassProps + i);
     }
     
@@ -131,6 +131,18 @@ int main(void) {
             SetShaderValue(renderer.lightingShader, locViewPos, &viewPos, SHADER_UNIFORM_VEC3);
         }
 
+        int locUvScale = GetShaderLocation(renderer.lightingShader, "uvScale");
+        int locUseNormalMap = GetShaderLocation(renderer.lightingShader, "useNormalMap");
+        Vector2 uvScaleScene = {1.0f, 1.0f};
+        Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
+        float useNormalScene = 0.0f;
+        if (locUvScale >= 0) {
+            SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleScene, SHADER_UNIFORM_VEC2);
+        }
+        if (locUseNormalMap >= 0) {
+            SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
+        }
+
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
 
@@ -150,6 +162,14 @@ int main(void) {
                 }
             EndMode3D();
         EndFullResRender();
+
+        if (locUvScale >= 0) {
+            SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleRocks, SHADER_UNIFORM_VEC2);
+        }
+        float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
+        if (locUseNormalMap >= 0) {
+            SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
+        }
 
         // 2. Draw quarter-resolution props (grass) to quarterResTarget
         BeginQuarterResRender(renderer);

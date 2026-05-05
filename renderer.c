@@ -22,6 +22,8 @@ Renderer InitRenderer(int width, int height, float propsScale) {
         printf("ERROR: Failed to load lighting shader!\n");
     } else {
         printf("INFO: Lighting shader loaded successfully (ID: %u)\n", renderer.lightingShader.id);
+        renderer.lightingShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(renderer.lightingShader, "texture0");
+        renderer.lightingShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(renderer.lightingShader, "texture1");
     }
     
     // Set default light position
