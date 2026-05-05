@@ -11,7 +11,7 @@
 #define SCREEN_HEIGHT 720
 
 // Rendering settings
-#define PROPS_RENDER_SCALE 1.0 // prop resolution scale
+#define PROPS_RENDER_SCALE 0.3 // prop resolution scale
 // Texture filter modes:
 // TEXTURE_FILTER_POINT - Nearest-neighbor filtering (pixelated)
 // TEXTURE_FILTER_BILINEAR - Linear filtering (smooth)
@@ -29,8 +29,10 @@
 #define PROPS_ROCK_Y_OFFSET (-0.25f)
 
 // LOS (Line of Sight) optimization settings
-#define LOS_MIN_CAMERA_MOVE 0.5f    // Minimum distance camera must move before rechecking LOS
-#define LOS_MAX_PROP_DISTANCE 30.0f // Maximum distance to check props visibility
+#define LOS_MIN_CAMERA_MOVE 0.5f       // Minimum distance camera must move before rechecking visibility
+#define LOS_MAX_GRASS_DISTANCE 45.0f   // Max grass visibility distance for cheap CPU culling
+#define LOS_MAX_ROCK_DISTANCE 80.0f    // Max rock visibility distance for cheap CPU culling
+#define LOS_TERRAIN_SAMPLES 8          // Cheap terrain occlusion samples per prop ray
 
 // Game state
 typedef struct {

@@ -33,22 +33,33 @@ int main(void) {
 
     // Initialize renderer
     Renderer renderer = InitRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, PROPS_RENDER_SCALE);
+    InitSkybox(
+        &renderer,
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/px.png",
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/nx.png",
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/py.png",
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/ny.png",
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/pz.png",
+        "raw-assets/sky_80_2k/sky_80_cubemap_2k/nz.png"
+    );
 
     // Define level geometry (walls, floor)
-    float roomWidth = 16.0f;
-    float roomLength = 16.0f;
+    float roomWidth = 500.0f;
+    float roomLength = 500.0f;
     float wallHeight = 8.0f;
     float wallThickness = 0.2f;
 
     // Initialize scene
+    unsigned int terrainSeed = (unsigned int)time(NULL);
     Scene scene = InitScene(roomWidth, roomLength, wallHeight, wallThickness, 
                            "raw-assets/tiling_dungeon_brickwall01.png", 
                            "raw-assets/tiling_dungeon_floor01.png",
-                           renderer.lightingShader);
+                           renderer.lightingShader,
+                           terrainSeed);
 
     // Define number of props to create
-    const int numGrassProps = 1000;  // 10800 grass billboards (72x original 150)
-    const int numRockProps = 500;    // 3600 rock models (72x original 50)
+    const int numGrassProps = 20000;  // 10800 grass billboards (72x original 150)
+    const int numRockProps = 10000;    // 3600 rock models (72x original 50)
     const int totalProps = numGrassProps + numRockProps;
     
     // Initialize random number generator
@@ -79,7 +90,8 @@ int main(void) {
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
         
         // Create grass prop slightly above floor
-        Vector3 position = (Vector3){ x, 0.05f, z };
+        float terrainY = GetTerrainHeightAt(scene, x, z);
+        Vector3 position = (Vector3){ x, terrainY + 0.05f, z };
         AddBillboardProp(&props, position, i);
     }
     
@@ -89,7 +101,8 @@ int main(void) {
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
         
-        Vector3 position = (Vector3){ x, PROPS_ROCK_Y_OFFSET, z };
+        float terrainY = GetTerrainHeightAt(scene, x, z);
+        Vector3 position = (Vector3){ x, terrainY + PROPS_ROCK_Y_OFFSET, z };
         AddModelProp(&props, position, numGrassProps + i);
     }
     
@@ -107,6 +120,11 @@ int main(void) {
         // Update
         //----------------------------------------------------------------------------------
         UpdateCamera(&gameState.camera, CAMERA_FIRST_PERSON); // Use Raylib's first person camera
+        float eyeHeight = 1.8f;
+        float previousY = gameState.camera.position.y;
+        float terrainY = GetTerrainHeightAt(scene, gameState.camera.position.x, gameState.camera.position.z);
+        gameState.camera.position.y = terrainY + eyeHeight;
+        gameState.camera.target.y += (gameState.camera.position.y - previousY);
 
         // Toggle debug visualization with F1 key
         if (IsKeyPressed(KEY_F1)) gameState.showDebugBoxes = !gameState.showDebugBoxes;
@@ -152,6 +170,7 @@ int main(void) {
         // 1. Draw full-resolution environment (walls, floor) to fullResTarget
         BeginFullResRender(renderer);
             BeginMode3D(gameState.camera);
+                DrawSkybox(renderer, gameState.camera);
                 // Draw scene
                 DrawScene(scene);
                 

@@ -9,8 +9,15 @@ typedef struct {
     float roomLength;
     float wallHeight;
     float wallThickness;
+    int terrainWidth;
+    int terrainLength;
+    float terrainCellSizeX;
+    float terrainCellSizeZ;
+    float terrainHeightScale;
+    float* terrainHeights;
     
     Model floorModel;
+    Model terrainModel;
     Model wallModelNS;  // North/South walls
     Model wallModelEW;  // East/West walls
     
@@ -24,13 +31,15 @@ typedef struct {
 
 // Initialize scene with dimensions and textures
 Scene InitScene(float width, float length, float height, float thickness, 
-                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader);
+                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader, unsigned int terrainSeed);
 
 // Draw scene (walls, floor)
 void DrawScene(Scene scene);
 
 // Draw debug visualization for scene (bounding boxes)
 void DrawSceneDebug(Scene scene);
+
+float GetTerrainHeightAt(Scene scene, float x, float z);
 
 // Unload scene resources
 void UnloadScene(Scene scene);

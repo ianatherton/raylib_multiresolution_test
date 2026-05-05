@@ -3,6 +3,26 @@
 #include <string.h>
 #include "rlgl.h"   // Required for rlDisableDepthMask and rlEnableDepthMask
 
+static BoundingBox BuildDummyBounds(Vector3 position, Vector3 halfExtents) {
+    return (BoundingBox){
+        .min = (Vector3){position.x - halfExtents.x, position.y - halfExtents.y, position.z - halfExtents.z},
+        .max = (Vector3){position.x + halfExtents.x, position.y + halfExtents.y, position.z + halfExtents.z}
+    };
+}
+
+static bool IsTerrainBlockingCheap(Scene scene, Vector3 origin, Vector3 target) {
+    Vector3 delta = Vector3Subtract(target, origin);
+    for (int i = 1; i < LOS_TERRAIN_SAMPLES; i++) {
+        float t = (float)i / (float)LOS_TERRAIN_SAMPLES;
+        Vector3 samplePoint = Vector3Add(origin, Vector3Scale(delta, t));
+        float terrainY = GetTerrainHeightAt(scene, samplePoint.x, samplePoint.z);
+        if (terrainY > samplePoint.y + 0.15f) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader) {
     Props props = {0};
     props.rockHasNormalMap = false;
@@ -16,6 +36,9 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     for (int i = 0; i < totalCount; i++) {
         props.props[i].visible = false;
         props.props[i].position = (Vector3){ 0.0f, 0.0f, 0.0f };
+        props.props[i].dummyHalfExtents = (Vector3){0.25f, 0.75f, 0.25f};
+        props.props[i].dummyBounds = BuildDummyBounds(props.props[i].position, props.props[i].dummyHalfExtents);
+        props.props[i].isOccluder = false;
     }
     
     // Load billboard texture
@@ -96,6 +119,9 @@ void AddBillboardProp(Props* props, Vector3 position, int index) {
     if (index >= 0 && index < props->count) {
         props->props[index].position = position;
         props->props[index].type = PROP_BILLBOARD;
+        props->props[index].dummyHalfExtents = (Vector3){0.20f, 0.75f, 0.20f};
+        props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
+        props->props[index].isOccluder = false;
         props->props[index].visible = true;
     }
 }
@@ -104,11 +130,15 @@ void AddModelProp(Props* props, Vector3 position, int index) {
     if (index >= 0 && index < props->count) {
         props->props[index].position = position;
         props->props[index].type = PROP_MODEL;
+        props->props[index].dummyHalfExtents = (Vector3){0.45f, 0.55f, 0.45f};
+        props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
+        props->props[index].isOccluder = true;
         props->props[index].visible = true;
     }
 }
 
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
+    (void)scene;
     float cameraMoveDistance = Vector3Distance(camera.position, props->lastCameraPosition);
     bool shouldUpdate = props->needsLOSUpdate || (cameraMoveDistance >= LOS_MIN_CAMERA_MOVE);
     
@@ -128,50 +158,24 @@ void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
         
         totalCount++;
         
-        // Check if prop is beyond max distance
-        Vector3 direction = Vector3Subtract(props->props[i].position, camera.position);
-        float distance = Vector3Length(direction);
-        
-        if (distance > LOS_MAX_PROP_DISTANCE) {
+        float maxDistance = (props->props[i].type == PROP_MODEL) ? LOS_MAX_ROCK_DISTANCE : LOS_MAX_GRASS_DISTANCE;
+        float distance = Vector3Distance(camera.position, props->props[i].position);
+        if (distance > maxDistance) {
             props->props[i].visible = false;
             continue;
         }
         
-        // Default to visible
         props->props[i].visible = true;
+        if (IsTerrainBlockingCheap(scene, camera.position, props->props[i].position)) {
+            props->props[i].visible = false;
+            continue;
+        }
         visibleCount++;
-        
-        // Check for wall occlusion
-        direction = Vector3Normalize(direction);
-        Ray ray = {camera.position, direction};
-        
-        for (int j = 0; j < scene.numWalls; j++) {
-            RayCollision collision = GetRayCollisionBox(ray, scene.wallBoxes[j]);
-            
-            if (collision.hit && collision.distance < distance) {
-                props->props[i].visible = false;
-                visibleCount--;
-                break;
-            }
-        }
-        
-        // Debug: Print ray and collision info for the first prop
-        if (i == 0) {
-            printf("Camera: (%.2f, %.2f, %.2f) -> Prop: (%.2f, %.2f, %.2f), Visible: %s\n", 
-                   camera.position.x, camera.position.y, camera.position.z,
-                   props->props[i].position.x, props->props[i].position.y, props->props[i].position.z,
-                   props->props[i].visible ? "Yes" : "No");
-        }
     }
     
     // Store the visible count
     props->visibleCount = visibleCount;
     
-    // Debug output - show how many props are visible
-    printf("LOS Update: Camera moved %.2f units\n", cameraMoveDistance);
-    printf("Props visible: %d/%d (%.1f%%)\n", 
-           visibleCount, totalCount, 
-           totalCount > 0 ? (float)visibleCount / totalCount * 100.0f : 0.0f);
 }
 
 // Helper function to check if a point is inside the camera frustum
@@ -290,7 +294,8 @@ void DrawPropsDebug(Props* props, Camera3D camera) {
         float distance = Vector3Length(direction);
         
         // Skip props that are too far away
-        if (distance > LOS_MAX_PROP_DISTANCE) {
+        float maxDistance = (props->props[i].type == PROP_MODEL) ? LOS_MAX_ROCK_DISTANCE : LOS_MAX_GRASS_DISTANCE;
+        if (distance > maxDistance) {
             continue;
         }
         
@@ -301,6 +306,10 @@ void DrawPropsDebug(Props* props, Camera3D camera) {
         // Draw sphere at prop position - blue for billboards, yellow for models
         Color sphereColor = props->props[i].type == PROP_BILLBOARD ? BLUE : YELLOW;
         DrawSphere(props->props[i].position, 0.1f, sphereColor);
+
+        // Draw proxy bounds used for LOS decisions
+        Color bboxColor = props->props[i].isOccluder ? ORANGE : SKYBLUE;
+        DrawBoundingBox(props->props[i].dummyBounds, bboxColor);
     }
 }
 

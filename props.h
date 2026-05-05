@@ -15,6 +15,9 @@ typedef struct {
     Vector3 position;
     bool visible;
     PropType type;   // Type of prop (billboard or 3D model)
+    BoundingBox dummyBounds; // CPU-side proxy volume for LOS testing
+    Vector3 dummyHalfExtents; // Half extents for dummy LOS cube
+    bool isOccluder; // Whether this prop can occlude others in LOS
 } Prop;
 
 // Props collection
