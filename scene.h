@@ -23,6 +23,8 @@ typedef struct {
     
     Texture2D wallTexture;
     Texture2D floorTexture;
+    Texture2D floorNormalMap;
+    bool floorHasNormalMap;
     
     // Collision boxes for walls
     BoundingBox* wallBoxes;

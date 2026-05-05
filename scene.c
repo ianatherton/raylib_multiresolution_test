@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <limits.h>
+#include <string.h>
 
 static float Hash2D(int x, int y, unsigned int seed) {
     unsigned int h = (unsigned int)(x * 374761393u + y * 668265263u) ^ (seed * 1442695041u);
@@ -49,6 +50,32 @@ static float FBM2D(float x, float z, unsigned int seed, int octaves, float lacun
     return (norm > 0.0f) ? (sum / norm) : 0.0f;
 }
 
+static float RidgeNoise2D(float x, float z, unsigned int seed, int octaves, float lacunarity, float gain) {
+    float frequency = 1.0f;
+    float amplitude = 1.0f;
+    float sum = 0.0f;
+    float norm = 0.0f;
+    for (int i = 0; i < octaves; i++) {
+        float n = ValueNoise2D(x * frequency, z * frequency, seed + (unsigned int)(i * 3571));
+        float ridge = 1.0f - fabsf(n);
+        ridge *= ridge;
+        sum += ridge * amplitude;
+        norm += amplitude;
+        frequency *= lacunarity;
+        amplitude *= gain;
+    }
+    return (norm > 0.0f) ? (sum / norm) : 0.0f;
+}
+
+static bool BuildNormalMapPath(const char* diffusePath, char* outPath, size_t outPathSize) {
+    const char* extension = strrchr(diffusePath, '.');
+    if (extension != NULL && extension != diffusePath) {
+        size_t baseLength = (size_t)(extension - diffusePath);
+        return snprintf(outPath, outPathSize, "%.*s_n%s", (int)baseLength, diffusePath, extension) > 0;
+    }
+    return snprintf(outPath, outPathSize, "%s_n", diffusePath) > 0;
+}
+
 Scene InitScene(float width, float length, float height, float thickness, 
                 const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader, unsigned int terrainSeed) {
     Scene scene = {0};
@@ -62,6 +89,19 @@ Scene InitScene(float width, float length, float height, float thickness,
     // Load textures
     scene.wallTexture = LoadTexture(wallTexturePath);
     scene.floorTexture = LoadTexture(floorTexturePath);
+    scene.floorNormalMap = (Texture2D){0};
+    scene.floorHasNormalMap = false;
+
+    char floorNormalPath[512] = {0};
+    if (BuildNormalMapPath(floorTexturePath, floorNormalPath, sizeof(floorNormalPath))) {
+        scene.floorNormalMap = LoadTexture(floorNormalPath);
+        if (scene.floorNormalMap.id > 0) {
+            scene.floorHasNormalMap = true;
+            printf("Floor normal map: %s (ID: %u)\n", floorNormalPath, scene.floorNormalMap.id);
+        } else {
+            printf("Floor normal map not found: %s\n", floorNormalPath);
+        }
+    }
     
     // Check if textures loaded successfully
     if (scene.wallTexture.id == 0) {
@@ -73,11 +113,18 @@ Scene InitScene(float width, float length, float height, float thickness,
     
     // Apply texture filtering to scene textures
     if (scene.wallTexture.id > 0) SetTextureFilter(scene.wallTexture, MAIN_TEXTURE_FILTER_MODE);
-    if (scene.floorTexture.id > 0) SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
+    if (scene.floorTexture.id > 0) {
+        SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
+        SetTextureWrap(scene.floorTexture, TEXTURE_WRAP_REPEAT);
+    }
+    if (scene.floorNormalMap.id > 0) {
+        SetTextureFilter(scene.floorNormalMap, MAIN_TEXTURE_FILTER_MODE);
+        SetTextureWrap(scene.floorNormalMap, TEXTURE_WRAP_REPEAT);
+    }
     
     scene.terrainWidth = 129;
     scene.terrainLength = 129;
-    scene.terrainHeightScale = 2.2f;
+    scene.terrainHeightScale = 4.8f;
     scene.terrainCellSizeX = width / (float)(scene.terrainWidth - 1);
     scene.terrainCellSizeZ = length / (float)(scene.terrainLength - 1);
     scene.terrainHeights = (float*)malloc((size_t)(scene.terrainWidth * scene.terrainLength) * sizeof(float));
@@ -99,16 +146,30 @@ Scene InitScene(float width, float length, float height, float thickness,
             int index = z * scene.terrainWidth + x;
             float worldX = startX + (float)x * scene.terrainCellSizeX;
             float worldZ = startZ + (float)z * scene.terrainCellSizeZ;
-            float noiseX = worldX * 0.14f;
-            float noiseZ = worldZ * 0.14f;
-            float heightValue = FBM2D(noiseX, noiseZ, terrainSeed, 5, 2.0f, 0.5f) * scene.terrainHeightScale;
+            float baseX = worldX * 0.012f;
+            float baseZ = worldZ * 0.012f;
+            float warpX = FBM2D(baseX + 37.1f, baseZ - 12.4f, terrainSeed + 911u, 3, 2.1f, 0.5f);
+            float warpZ = FBM2D(baseX - 18.6f, baseZ + 25.7f, terrainSeed + 1823u, 3, 2.1f, 0.5f);
+            float warpedX = baseX + warpX * 0.9f;
+            float warpedZ = baseZ + warpZ * 0.9f;
+            float macro = FBM2D(warpedX * 0.65f, warpedZ * 0.65f, terrainSeed, 5, 2.0f, 0.5f);
+            float detail = FBM2D(warpedX * 2.3f, warpedZ * 2.3f, terrainSeed + 457u, 4, 2.2f, 0.45f);
+            float ridges = RidgeNoise2D(warpedX * 1.45f, warpedZ * 1.45f, terrainSeed + 1291u, 4, 2.0f, 0.5f);
+            float peakMaskRaw = FBM2D(warpedX * 0.22f, warpedZ * 0.22f, terrainSeed + 2903u, 3, 2.0f, 0.55f);
+            float peakMask = Clamp((peakMaskRaw - 0.45f) / 0.55f, 0.0f, 1.0f);
+            peakMask = peakMask * peakMask;
+            float tallPeaks = RidgeNoise2D(warpedX * 0.85f, warpedZ * 0.85f, terrainSeed + 3761u, 4, 2.1f, 0.5f) * peakMask;
+            float heightShape = macro * 0.75f + detail * 0.30f + (ridges * 2.0f - 1.0f) * 0.65f + tallPeaks * 1.6f;
+            float heightValue = heightShape * (scene.terrainHeightScale * 1.55f);
+            float extremePeakMask = Clamp((peakMask - 0.90f) / 0.10f, 0.0f, 1.0f);
+            heightValue *= (1.0f + 0.70f * extremePeakMask);
             scene.terrainHeights[index] = heightValue;
 
             terrainMesh.vertices[index * 3 + 0] = worldX;
             terrainMesh.vertices[index * 3 + 1] = heightValue;
             terrainMesh.vertices[index * 3 + 2] = worldZ;
-            terrainMesh.texcoords[index * 2 + 0] = ((float)x / (float)(scene.terrainWidth - 1)) * 8.0f;
-            terrainMesh.texcoords[index * 2 + 1] = ((float)z / (float)(scene.terrainLength - 1)) * 8.0f;
+            terrainMesh.texcoords[index * 2 + 0] = ((float)x / (float)(scene.terrainWidth - 1)) * TERRAIN_UV_REPEAT;
+            terrainMesh.texcoords[index * 2 + 1] = ((float)z / (float)(scene.terrainLength - 1)) * TERRAIN_UV_REPEAT;
         }
     }
 
@@ -166,6 +227,7 @@ Scene InitScene(float width, float length, float height, float thickness,
     // Assign textures to models
     if (scene.floorTexture.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.floorTexture;
     else scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = GRAY; // Fallback color
+    if (scene.floorNormalMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture = scene.floorNormalMap;
     
     if (scene.wallTexture.id > 0) {
         scene.wallModelNS.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.wallTexture;
@@ -271,6 +333,7 @@ void UnloadScene(Scene scene) {
     // Unload textures
     UnloadTexture(scene.wallTexture);
     UnloadTexture(scene.floorTexture);
+    if (scene.floorNormalMap.id > 0) UnloadTexture(scene.floorNormalMap);
     
     // Free allocated memory
     free(scene.wallBoxes);

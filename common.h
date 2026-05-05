@@ -11,7 +11,7 @@
 #define SCREEN_HEIGHT 720
 
 // Rendering settings
-#define PROPS_RENDER_SCALE 0.3 // prop resolution scale
+#define PROPS_RENDER_SCALE 0.5 // prop resolution scale
 // Texture filter modes:
 // TEXTURE_FILTER_POINT - Nearest-neighbor filtering (pixelated)
 // TEXTURE_FILTER_BILINEAR - Linear filtering (smooth)
@@ -21,6 +21,9 @@
 // TEXTURE_FILTER_ANISOTROPIC_16X - Anisotropic filtering 16x (highest quality at angles)
 #define MAIN_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR      // Filter for full resolution render target
 #define PROPS_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR  // Filter for quarter resolution props render target
+
+// Terrain texture tiling density across full terrain dimensions (higher = more repeats)
+#define TERRAIN_UV_REPEAT 80.0f
 
 // How many times the rock diffuse repeats per mesh UV unit (needs TEXTURE_WRAP_REPEAT on rock texture)
 #define PROPS_ROCK_UV_REPEAT 6.0f

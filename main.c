@@ -58,8 +58,8 @@ int main(void) {
                            terrainSeed);
 
     // Define number of props to create
-    const int numGrassProps = 20000;  // 10800 grass billboards (72x original 150)
-    const int numRockProps = 10000;    // 3600 rock models (72x original 50)
+    const int numGrassProps = 40000;  // 10800 grass billboards (72x original 150)
+    const int numRockProps = 20000;    // 3600 rock models (72x original 50)
     const int totalProps = numGrassProps + numRockProps;
     
     // Initialize random number generator
@@ -153,7 +153,7 @@ int main(void) {
         int locUseNormalMap = GetShaderLocation(renderer.lightingShader, "useNormalMap");
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
-        float useNormalScene = 0.0f;
+        float useNormalScene = scene.floorHasNormalMap ? 1.0f : 0.0f;
         if (locUvScale >= 0) {
             SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleScene, SHADER_UNIFORM_VEC2);
         }
