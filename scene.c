@@ -86,8 +86,8 @@ Scene InitScene(float width, float length, float height, float thickness,
     scene.wallHeight = height;
     scene.wallThickness = thickness;
     
-    // Load textures
-    scene.wallTexture = LoadTexture(wallTexturePath);
+    // Surrounding walls are temporarily disabled.
+    scene.wallTexture = (Texture2D){0};
     scene.floorTexture = LoadTexture(floorTexturePath);
     scene.floorNormalMap = (Texture2D){0};
     scene.floorHasNormalMap = false;
@@ -104,15 +104,12 @@ Scene InitScene(float width, float length, float height, float thickness,
     }
     
     // Check if textures loaded successfully
-    if (scene.wallTexture.id == 0) {
-        printf("Failed to load wall texture: %s\n", wallTexturePath);
-    }
+    (void)wallTexturePath;
     if (scene.floorTexture.id == 0) {
         printf("Failed to load floor texture: %s\n", floorTexturePath);
     }
     
     // Apply texture filtering to scene textures
-    if (scene.wallTexture.id > 0) SetTextureFilter(scene.wallTexture, MAIN_TEXTURE_FILTER_MODE);
     if (scene.floorTexture.id > 0) {
         SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
         SetTextureWrap(scene.floorTexture, TEXTURE_WRAP_REPEAT);
@@ -216,81 +213,28 @@ Scene InitScene(float width, float length, float height, float thickness,
     scene.terrainModel = LoadModelFromMesh(terrainMesh);
     scene.floorModel = scene.terrainModel;
 
-    Mesh wallNS = GenMeshCube(width, height, thickness);
-    GenMeshTangents(&wallNS);
-    scene.wallModelNS = LoadModelFromMesh(wallNS);
-
-    Mesh wallEW = GenMeshCube(thickness, height, length);
-    GenMeshTangents(&wallEW);
-    scene.wallModelEW = LoadModelFromMesh(wallEW);
+    scene.wallModelNS = (Model){0};
+    scene.wallModelEW = (Model){0};
     
     // Assign textures to models
     if (scene.floorTexture.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.floorTexture;
     else scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = GRAY; // Fallback color
     if (scene.floorNormalMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture = scene.floorNormalMap;
     
-    if (scene.wallTexture.id > 0) {
-        scene.wallModelNS.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.wallTexture;
-        scene.wallModelEW.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.wallTexture;
-    } else {
-        scene.wallModelNS.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGRAY; // Fallback color
-        scene.wallModelEW.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = DARKGRAY; // Fallback color
-    }
-
     // Assign lighting shader to all scene models' materials with safety checks
     if (scene.terrainModel.materialCount > 0) {
         scene.terrainModel.materials[0].shader = lightingShader;
     }
-    if (scene.wallModelNS.materialCount > 0) {
-        scene.wallModelNS.materials[0].shader = lightingShader;
-    }
-    if (scene.wallModelEW.materialCount > 0) {
-        scene.wallModelEW.materials[0].shader = lightingShader;
-    }
-    
-    // Define wall collision boxes
-    scene.numWalls = 4;
-    scene.wallBoxes = (BoundingBox*)malloc(scene.numWalls * sizeof(BoundingBox));
-    
-    // Front wall (+Z)
-    scene.wallBoxes[0] = (BoundingBox){
-        (Vector3){ -width/2.0f, 0.0f, length/2.0f - thickness/2.0f },
-        (Vector3){ width/2.0f, height, length/2.0f + thickness/2.0f }
-    };
-    
-    // Back wall (-Z)
-    scene.wallBoxes[1] = (BoundingBox){
-        (Vector3){ -width/2.0f, 0.0f, -length/2.0f - thickness/2.0f },
-        (Vector3){ width/2.0f, height, -length/2.0f + thickness/2.0f }
-    };
-    
-    // Left wall (-X)
-    scene.wallBoxes[2] = (BoundingBox){
-        (Vector3){ -width/2.0f - thickness/2.0f, 0.0f, -length/2.0f },
-        (Vector3){ -width/2.0f + thickness/2.0f, height, length/2.0f }
-    };
-    
-    // Right wall (+X)
-    scene.wallBoxes[3] = (BoundingBox){
-        (Vector3){ width/2.0f - thickness/2.0f, 0.0f, -length/2.0f },
-        (Vector3){ width/2.0f + thickness/2.0f, height, length/2.0f }
-    };
+    ApplyTextureFilterToAllMaterialMaps(scene.terrainModel, MAIN_TEXTURE_FILTER_MODE);
+
+    scene.numWalls = 0;
+    scene.wallBoxes = NULL;
     
     return scene;
 }
 
 void DrawScene(Scene scene) {
     DrawModel(scene.terrainModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
-    
-    // Draw Walls
-    // Front wall (+Z)
-    DrawModel(scene.wallModelNS, (Vector3){ 0.0f, scene.wallHeight/2.0f, scene.roomLength/2.0f }, 1.0f, WHITE);
-    // Back wall (-Z)
-    DrawModel(scene.wallModelNS, (Vector3){ 0.0f, scene.wallHeight/2.0f, -scene.roomLength/2.0f }, 1.0f, WHITE);
-    // Left wall (-X)
-    DrawModel(scene.wallModelEW, (Vector3){ -scene.roomWidth/2.0f, scene.wallHeight/2.0f, 0.0f }, 1.0f, WHITE);
-    // Right wall (+X)
-    DrawModel(scene.wallModelEW, (Vector3){ scene.roomWidth/2.0f, scene.wallHeight/2.0f, 0.0f }, 1.0f, WHITE);
 }
 
 void DrawSceneDebug(Scene scene) {
@@ -327,11 +271,11 @@ float GetTerrainHeightAt(Scene scene, float x, float z) {
 void UnloadScene(Scene scene) {
     // Unload models
     UnloadModel(scene.terrainModel);
-    UnloadModel(scene.wallModelNS);
-    UnloadModel(scene.wallModelEW);
+    if (scene.wallModelNS.meshCount > 0) UnloadModel(scene.wallModelNS);
+    if (scene.wallModelEW.meshCount > 0) UnloadModel(scene.wallModelEW);
     
     // Unload textures
-    UnloadTexture(scene.wallTexture);
+    if (scene.wallTexture.id > 0) UnloadTexture(scene.wallTexture);
     UnloadTexture(scene.floorTexture);
     if (scene.floorNormalMap.id > 0) UnloadTexture(scene.floorNormalMap);
     

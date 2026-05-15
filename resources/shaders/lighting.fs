@@ -18,7 +18,7 @@ uniform sampler2D texture1; // tangent-space normal (OpenGL: Y+ up in map); MATE
 // Lighting parameters - using constants instead of uniforms for simplicity
 const float ambientStrength = 0.2;
 const float diffuseStrength = 1.0;
-const float specularStrength = 0.5;
+const float specularStrength = 0.01;
 const float shininess = 16.0;
 
 out vec4 fragColor;

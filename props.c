@@ -105,7 +105,8 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
         }
         printf("Rock model: %d materials, %d meshes\n", props.model.materialCount, props.model.meshCount);
     }
-    
+    ApplyTextureFilterToAllMaterialMaps(props.model, PROPS_TEXTURE_FILTER_MODE);
+
     // Initialize LOS optimization fields
     props.lastCameraPosition = (Vector3){ 0.0f, 0.0f, 0.0f };
     props.needsLOSUpdate = true;  // Force initial update
@@ -218,9 +219,101 @@ int CompareBillboardDepth(const void* a, const void* b) {
     return 0;
 }
 
+static float HashToUnitFloat(unsigned int x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return (float)(x & 0x00FFFFFFU) / 16777215.0f;
+}
+
+// Smooth yaw (Y) + pitch (X) from world XZ only so nearby grass shares similar orientation (static field).
+static void GrassFieldAngles(float x, float z, float* yaw, float* pitch) {
+    float nx = x * 0.026f + z * 0.014f;
+    float nz = z * 0.023f - x * 0.018f;
+    float a = sinf(nx) * 0.72f + sinf(nx * 0.47f + nz * 0.31f) * 0.28f;
+    float b = cosf(nz) * 0.68f + cosf(nx * 0.55f - nz * 0.42f) * 0.32f;
+    *yaw = (a * 0.92f + b * 0.55f) * PI;
+    float c = sinf(nz * 1.15f + nx * 0.74f) * 0.62f + cosf(nx * 1.08f) * 0.38f;
+    *pitch = c * (16.0f * DEG2RAD);
+}
+
+// World-oriented quad + wind lean (Rx then Rz, pivot at base). Two opposite windings so both sides draw with backface cull on (rl batch can ignore rlDisableBackfaceCulling).
+static void DrawGrassTexturedPlane(Vector3 baseCenter, Texture2D tex, Rectangle source, Vector2 size, float yaw, float pitch, float leanAx, float leanAz, Color tint) {
+    float w = size.x;
+    float h = size.y;
+    Vector3 bl = {-w * 0.5f, 0.0f, 0.0f};
+    Vector3 br = {w * 0.5f, 0.0f, 0.0f};
+    Vector3 tr = {w * 0.5f, h, 0.0f};
+    Vector3 tl = {-w * 0.5f, h, 0.0f};
+    Matrix spatial = MatrixMultiply(MatrixRotateX(pitch), MatrixRotateY(yaw));
+    Matrix lean = MatrixMultiply(MatrixRotateZ(leanAz), MatrixRotateX(leanAx));
+    Matrix orient = MatrixMultiply(lean, spatial);
+    bl = Vector3Add(baseCenter, Vector3Transform(bl, orient));
+    br = Vector3Add(baseCenter, Vector3Transform(br, orient));
+    tr = Vector3Add(baseCenter, Vector3Transform(tr, orient));
+    tl = Vector3Add(baseCenter, Vector3Transform(tl, orient));
+    float tw = (float)tex.width;
+    float th = (float)tex.height;
+    Vector2 uv0 = {source.x / tw, (source.y + source.height) / th};
+    Vector2 uv1 = {(source.x + source.width) / tw, (source.y + source.height) / th};
+    Vector2 uv2 = {(source.x + source.width) / tw, source.y / th};
+    Vector2 uv3 = {source.x / tw, source.y / th};
+    rlSetTexture(tex.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
+    rlTexCoord2f(uv0.x, uv0.y);
+    rlVertex3f(bl.x, bl.y, bl.z);
+    rlTexCoord2f(uv1.x, uv1.y);
+    rlVertex3f(br.x, br.y, br.z);
+    rlTexCoord2f(uv2.x, uv2.y);
+    rlVertex3f(tr.x, tr.y, tr.z);
+    rlTexCoord2f(uv3.x, uv3.y);
+    rlVertex3f(tl.x, tl.y, tl.z);
+    rlTexCoord2f(uv0.x, uv0.y);
+    rlVertex3f(bl.x, bl.y, bl.z);
+    rlTexCoord2f(uv3.x, uv3.y);
+    rlVertex3f(tl.x, tl.y, tl.z);
+    rlTexCoord2f(uv2.x, uv2.y);
+    rlVertex3f(tr.x, tr.y, tr.z);
+    rlTexCoord2f(uv1.x, uv1.y);
+    rlVertex3f(br.x, br.y, br.z);
+    rlEnd();
+    rlSetTexture(0);
+}
+
+static void DrawGroundContactAO(const Prop* prop) {
+    float aoRadius = (prop->type == PROP_MODEL) ? 0.48f : 0.20f;
+    float aoHeight = 0.01f;
+    float aoYOffset = (prop->type == PROP_MODEL) ? 0.02f : 0.01f;
+    unsigned char aoAlpha = (prop->type == PROP_MODEL) ? 195 : 81;
+    Vector3 aoBase = {
+        prop->position.x,
+        prop->position.y + aoYOffset,
+        prop->position.z
+    };
+    Vector3 aoTop = {
+        prop->position.x,
+        prop->position.y + aoYOffset + aoHeight,
+        prop->position.z
+    };
+    DrawCylinderEx(aoBase, aoTop, aoRadius * 0.55f, aoRadius, 12, (Color){0, 0, 0, aoAlpha});
+}
+
 void DrawProps(Props* props, Camera3D camera) {
-    // Reset rendered count
     props->renderedCount = 0;
+
+    const int maxGroundAoDraws = 3500;
+    int groundAoDraws = 0;
+    rlDisableDepthMask();
+    for (int i = 0; i < props->count && groundAoDraws < maxGroundAoDraws; i++) {
+        if (!props->props[i].visible) continue;
+        if (!IsPointInFrustum(props->props[i].position, camera, 1.0f)) continue;
+        DrawGroundContactAO(&props->props[i]);
+        groundAoDraws++;
+    }
+    rlEnableDepthMask();
     
     // Arrays to store visible billboards and models for separate processing
     BillboardDepthInfo* visibleBillboards = (BillboardDepthInfo*)malloc(props->count * sizeof(BillboardDepthInfo));
@@ -245,7 +338,8 @@ void DrawProps(Props* props, Camera3D camera) {
             billboardCount++;
         } else if (props->props[i].type == PROP_MODEL) {
             // Draw models immediately (they have their own depth testing)
-            float scale = 0.5f;
+            float modelScaleRand = HashToUnitFloat((unsigned int)(i * 7919 + 101));
+            float scale = 0.38f + modelScaleRand * 0.34f;
             float rotationAngle = (float)((i * 37) % 360); // Different rotation for each rock
             
             // Draw the model with position, rotation and scale
@@ -258,18 +352,28 @@ void DrawProps(Props* props, Camera3D camera) {
         }
     }
     
-    // Sort billboards by distance (far to near)
+    // Sort grass planes by distance (far to near)
     if (billboardCount > 0) {
         qsort(visibleBillboards, billboardCount, sizeof(BillboardDepthInfo), CompareBillboardDepth);
         
         // Enable alpha blending for proper transparency
         rlDisableDepthMask();  // Disable depth writes
         
-        // Draw billboards in sorted order (far to near)
+        float t = (float)GetTime();
         for (int i = 0; i < billboardCount; i++) {
             int index = visibleBillboards[i].index;
-            DrawBillboardRec(camera, props->billboardTexture, props->billboardSourceRec, 
-                            props->props[index].position, props->billboardSize, WHITE);
+            Vector3 p = props->props[index].position;
+            float yaw = 0.0f;
+            float pitch = 0.0f;
+            GrassFieldAngles(p.x, p.z, &yaw, &pitch);
+            float randA = HashToUnitFloat((unsigned int)(index * 9781 + 17));
+            float randB = HashToUnitFloat((unsigned int)(index * 6271 + 53));
+            float speed = 0.8f + randA * 1.6f;
+            float phase = randB * PI * 2.0f;
+            float maxLeanRad = (5.0f + randA * 11.0f) * DEG2RAD;
+            float leanAx = sinf(t * speed + phase) * maxLeanRad;
+            float leanAz = cosf(t * (speed * 0.73f) + phase * 1.37f) * maxLeanRad * 0.48f;
+            DrawGrassTexturedPlane(p, props->billboardTexture, props->billboardSourceRec, props->billboardSize, yaw, pitch, leanAx, leanAz, WHITE);
         }
         
         // Restore depth mask

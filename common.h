@@ -11,7 +11,12 @@
 #define SCREEN_HEIGHT 720
 
 // Rendering settings
-#define PROPS_RENDER_SCALE 0.5 // prop resolution scale
+#define PROPS_RENDER_SCALE 0.3 // prop resolution scale
+
+// DOF in world meters from camera: no blur at or below DOF_SHARP_RADIUS_M; full blur by DOF_BLUR_FULL_DIST_M
+#define DOF_SHARP_RADIUS_M 4.0f
+#define DOF_BLUR_FULL_DIST_M 55.0f
+#define DOF_GAUSSIAN_PIXEL_SCALE 0.01f // wider separable blur before distance mix
 // Texture filter modes:
 // TEXTURE_FILTER_POINT - Nearest-neighbor filtering (pixelated)
 // TEXTURE_FILTER_BILINEAR - Linear filtering (smooth)
@@ -22,8 +27,19 @@
 #define MAIN_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR      // Filter for full resolution render target
 #define PROPS_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR  // Filter for quarter resolution props render target
 
+static inline void ApplyTextureFilterToAllMaterialMaps(Model model, int filter) { // all material maps incl. GLB embeds
+    for (int i = 0; i < model.materialCount; i++) {
+        Material *mat = &model.materials[i];
+        if (mat->maps == NULL) continue;
+        for (int m = 0; m <= MATERIAL_MAP_BRDF; m++) {
+            Texture2D t = mat->maps[m].texture;
+            if (t.id > 0) SetTextureFilter(t, filter);
+        }
+    }
+}
+
 // Terrain texture tiling density across full terrain dimensions (higher = more repeats)
-#define TERRAIN_UV_REPEAT 80.0f
+#define TERRAIN_UV_REPEAT 180.0f
 
 // How many times the rock diffuse repeats per mesh UV unit (needs TEXTURE_WRAP_REPEAT on rock texture)
 #define PROPS_ROCK_UV_REPEAT 6.0f

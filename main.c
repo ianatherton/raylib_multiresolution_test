@@ -19,6 +19,7 @@ int main(void) {
     // Initialization
     //--------------------------------------------------------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Raylib First Person Demo");
+    SetTextureFilter(GetFontDefault().texture, MAIN_TEXTURE_FILTER_MODE);
 
     // Initialize game state
     GameState gameState = {0};
@@ -35,12 +36,12 @@ int main(void) {
     Renderer renderer = InitRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, PROPS_RENDER_SCALE);
     InitSkybox(
         &renderer,
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/px.png",
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/nx.png",
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/py.png",
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/ny.png",
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/pz.png",
-        "raw-assets/sky_80_2k/sky_80_cubemap_2k/nz.png"
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/px.png",
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/nx.png",
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/py.png",
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/ny.png",
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/pz.png",
+        "raw-assets/skybox_clear/sky_105_cubemap_2k/nz.png"
     );
 
     // Define level geometry (walls, floor)
@@ -58,8 +59,8 @@ int main(void) {
                            terrainSeed);
 
     // Define number of props to create
-    const int numGrassProps = 40000;  // 10800 grass billboards (72x original 150)
-    const int numRockProps = 20000;    // 3600 rock models (72x original 50)
+    const int numGrassProps = 200000;  // 10800 grass billboards (72x original 150)
+    const int numRockProps = 40000;    // 3600 rock models (72x original 50)
     const int totalProps = numGrassProps + numRockProps;
     
     // Initialize random number generator
@@ -199,7 +200,7 @@ int main(void) {
         EndQuarterResRender();
 
         // 3. Composite to screen and draw UI
-        CompositeFinalFrame(renderer, props.renderedCount, props.visibleCount);
+        CompositeFinalFrame(renderer, gameState.camera, props.renderedCount, props.visibleCount);
     }
 
     // De-Initialization

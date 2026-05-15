@@ -1,6 +1,51 @@
 #include "renderer.h"
 #include "rlgl.h"
 
+// Color + depth texture FBO (raylib LoadRenderTexture uses a depth renderbuffer — not sampleable for DOF)
+static RenderTexture2D LoadRenderTextureDepthReadable(int width, int height) {
+    RenderTexture2D target = {0};
+    target.id = rlLoadFramebuffer();
+    if (target.id == 0) return target;
+
+    rlEnableFramebuffer(target.id);
+
+    target.texture.id = rlLoadTexture(NULL, width, height, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, 1);
+    target.texture.width = width;
+    target.texture.height = height;
+    target.texture.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    target.texture.mipmaps = 1;
+
+    target.depth.id = rlLoadTextureDepth(width, height, false);
+    target.depth.width = width;
+    target.depth.height = height;
+    target.depth.format = 19;
+    target.depth.mipmaps = 1;
+
+    rlFramebufferAttach(target.id, target.texture.id, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+    rlFramebufferAttach(target.id, target.depth.id, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_TEXTURE2D, 0);
+
+    if (!rlFramebufferComplete(target.id)) printf("ERROR: Depth-readable FBO incomplete\n");
+
+    rlDisableFramebuffer();
+    return target;
+}
+
+// Matches GetScreenToWorldRayEx: view = LookAt, proj = Perspective/Ortho, inv(view*proj) for depth unproject
+static Matrix DofInvViewProj(Camera3D camera, int fbWidth, int fbHeight) {
+    Matrix view = MatrixLookAt(camera.position, camera.target, camera.up);
+    Matrix proj;
+    if (camera.projection == CAMERA_ORTHOGRAPHIC) {
+        double aspect = (double)fbWidth / (double)fbHeight;
+        double top = camera.fovy / 2.0;
+        double right = top * aspect;
+        proj = MatrixOrtho(-right, right, -top, top, rlGetCullDistanceNear(), rlGetCullDistanceFar());
+    } else {
+        proj = MatrixPerspective(camera.fovy * DEG2RAD, (double)fbWidth / (double)fbHeight, rlGetCullDistanceNear(), rlGetCullDistanceFar());
+    }
+    Matrix viewProj = MatrixMultiply(view, proj);
+    return MatrixInvert(viewProj);
+}
+
 static const char* SKYBOX_VS = "#version 330\n"
 "in vec3 vertexPosition;\n"
 "out vec3 texCoord;\n"
@@ -22,13 +67,25 @@ static const char* SKYBOX_FS = "#version 330\n"
 Renderer InitRenderer(int width, int height, float propsScale) {
     Renderer renderer = {0};
     
-    // Create render textures for full and quarter resolution
-    renderer.fullResTarget = LoadRenderTexture(width, height);
-    renderer.quarterResTarget = LoadRenderTexture(width * propsScale, height * propsScale);
+    // Full / quarter FBOs need sampleable depth for distance-based DOF
+    int qw = (int)(width * propsScale);
+    int qh = (int)(height * propsScale);
+    if (qw < 1) qw = 1;
+    if (qh < 1) qh = 1;
+    renderer.fullResTarget = LoadRenderTextureDepthReadable(width, height);
+    renderer.quarterResTarget = LoadRenderTextureDepthReadable(qw, qh);
+    renderer.compositeTarget = LoadRenderTexture(width, height);
+    renderer.blurPing = LoadRenderTexture(width, height);
+    renderer.blurPong = LoadRenderTexture(width, height);
     
     // Apply texture filtering to both render targets with their respective modes
     SetTextureFilter(renderer.fullResTarget.texture, MAIN_TEXTURE_FILTER_MODE);
     SetTextureFilter(renderer.quarterResTarget.texture, PROPS_TEXTURE_FILTER_MODE);
+    SetTextureFilter(renderer.fullResTarget.depth, TEXTURE_FILTER_POINT);
+    SetTextureFilter(renderer.quarterResTarget.depth, TEXTURE_FILTER_POINT);
+    SetTextureFilter(renderer.compositeTarget.texture, MAIN_TEXTURE_FILTER_MODE);
+    SetTextureFilter(renderer.blurPing.texture, MAIN_TEXTURE_FILTER_MODE);
+    SetTextureFilter(renderer.blurPong.texture, MAIN_TEXTURE_FILTER_MODE);
     
     // Load and initialize the lighting shader
     renderer.lightingShader = LoadShader(
@@ -44,6 +101,11 @@ Renderer InitRenderer(int width, int height, float propsScale) {
         renderer.lightingShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(renderer.lightingShader, "texture0");
         renderer.lightingShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(renderer.lightingShader, "texture1");
     }
+
+    renderer.dofBlurShader = LoadShader("resources/shaders/dof_blur.vs", "resources/shaders/dof_blur.fs");
+    renderer.dofCompositeShader = LoadShader("resources/shaders/dof_composite.vs", "resources/shaders/dof_composite.fs");
+    if (renderer.dofBlurShader.id == 0) printf("ERROR: Failed to load DOF blur shader\n");
+    if (renderer.dofCompositeShader.id == 0) printf("ERROR: Failed to load DOF composite shader\n");
     
     // Set default light position
     renderer.lightPosition = (Vector3){0.0f, 6.0f, 0.0f};
@@ -105,6 +167,7 @@ bool InitSkybox(Renderer* renderer, const char* pxPath, const char* nxPath, cons
         printf("ERROR: Failed to create cubemap texture from skybox faces\n");
         return false;
     }
+    SetTextureFilter(renderer->skyboxCubemap, MAIN_TEXTURE_FILTER_MODE);
 
     renderer->skyboxShader = LoadShaderFromMemory(SKYBOX_VS, SKYBOX_FS);
     if (renderer->skyboxShader.id == 0) {
@@ -156,33 +219,84 @@ void EndQuarterResRender(void) {
     EndTextureMode();
 }
 
-void CompositeFinalFrame(Renderer renderer, int renderedProps, int visibleProps) {
+void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps) {
+    float w = (float)renderer.fullResTarget.texture.width;
+    float h = (float)renderer.fullResTarget.texture.height;
+    Rectangle fullFlipped = { 0.0f, 0.0f, w, -h };
+    Rectangle propsFlipped = { 0.0f, 0.0f, (float)renderer.quarterResTarget.texture.width, (float)-renderer.quarterResTarget.texture.height };
+    Rectangle destFull = { 0.0f, 0.0f, w, h };
+
+    BeginTextureMode(renderer.compositeTarget);
+    ClearBackground(BLACK);
+    DrawTextureRec(renderer.fullResTarget.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
+    DrawTexturePro(renderer.quarterResTarget.texture, propsFlipped, destFull, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
+    EndTextureMode();
+
+    if (renderer.dofBlurShader.id != 0 && renderer.dofCompositeShader.id != 0) {
+        float scale = DOF_GAUSSIAN_PIXEL_SCALE;
+        Vector2 texelH = { scale / w, 0.0f };
+        Vector2 texelV = { 0.0f, scale / h };
+        int locBlurImage = GetShaderLocation(renderer.dofBlurShader, "image");
+        int locBlurDir = GetShaderLocation(renderer.dofBlurShader, "texelDir");
+
+        BeginTextureMode(renderer.blurPing);
+        ClearBackground(BLANK);
+        BeginShaderMode(renderer.dofBlurShader);
+        SetShaderValueTexture(renderer.dofBlurShader, locBlurImage, renderer.compositeTarget.texture);
+        SetShaderValue(renderer.dofBlurShader, locBlurDir, &texelH, SHADER_UNIFORM_VEC2);
+        DrawTextureRec(renderer.compositeTarget.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+
+        BeginTextureMode(renderer.blurPong);
+        ClearBackground(BLANK);
+        BeginShaderMode(renderer.dofBlurShader);
+        SetShaderValueTexture(renderer.dofBlurShader, locBlurImage, renderer.blurPing.texture);
+        SetShaderValue(renderer.dofBlurShader, locBlurDir, &texelV, SHADER_UNIFORM_VEC2);
+        DrawTextureRec(renderer.blurPing.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+    }
+
     BeginDrawing();
     ClearBackground(BLACK);
-    
-    // Draw the full resolution environment
-    DrawTextureRec(renderer.fullResTarget.texture,
-                   (Rectangle){ 0, 0, (float)renderer.fullResTarget.texture.width, (float)-renderer.fullResTarget.texture.height }, // Source rec (flip Y)
-                   (Vector2){ 0, 0 }, // Position
-                   WHITE);
-    
-    // Draw the quarter resolution props, scaled up
-    DrawTexturePro(renderer.quarterResTarget.texture,
-                   (Rectangle){ 0, 0, (float)renderer.quarterResTarget.texture.width, (float)-renderer.quarterResTarget.texture.height }, // Source rec (flip Y)
-                   (Rectangle){ 0, 0, renderer.fullResTarget.texture.width, renderer.fullResTarget.texture.height }, // Destination rec (scaled to full screen)
-                   (Vector2){ 0, 0 }, // Origin
-                   0.0f, // Rotation
-                   WHITE);
-    
-    // Draw FPS counter
+
+    if (renderer.dofBlurShader.id == 0 || renderer.dofCompositeShader.id == 0) {
+        DrawTextureRec(renderer.compositeTarget.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
+    } else {
+        BeginShaderMode(renderer.dofCompositeShader);
+        int locSharp = GetShaderLocation(renderer.dofCompositeShader, "sharpTex");
+        int locBlur = GetShaderLocation(renderer.dofCompositeShader, "blurTex");
+        int locDs = GetShaderLocation(renderer.dofCompositeShader, "depthScene");
+        int locDp = GetShaderLocation(renderer.dofCompositeShader, "depthProps");
+        int locPc = GetShaderLocation(renderer.dofCompositeShader, "propsColorTex");
+        int locInvVP = GetShaderLocation(renderer.dofCompositeShader, "invViewProj");
+        int locCam = GetShaderLocation(renderer.dofCompositeShader, "camPos");
+        int locSharpR = GetShaderLocation(renderer.dofCompositeShader, "dofSharpRadiusM");
+        int locBlurFull = GetShaderLocation(renderer.dofCompositeShader, "dofBlurFullDistM");
+        SetShaderValueTexture(renderer.dofCompositeShader, locSharp, renderer.compositeTarget.texture);
+        SetShaderValueTexture(renderer.dofCompositeShader, locBlur, renderer.blurPong.texture);
+        SetShaderValueTexture(renderer.dofCompositeShader, locDs, renderer.fullResTarget.depth);
+        SetShaderValueTexture(renderer.dofCompositeShader, locDp, renderer.quarterResTarget.depth);
+        SetShaderValueTexture(renderer.dofCompositeShader, locPc, renderer.quarterResTarget.texture);
+        Matrix invVP = DofInvViewProj(camera, (int)w, (int)h);
+        Vector3 camPos = camera.position;
+        float sharpR = DOF_SHARP_RADIUS_M;
+        float blurFull = DOF_BLUR_FULL_DIST_M;
+        SetShaderValueMatrix(renderer.dofCompositeShader, locInvVP, invVP);
+        SetShaderValue(renderer.dofCompositeShader, locCam, &camPos, SHADER_UNIFORM_VEC3);
+        SetShaderValue(renderer.dofCompositeShader, locSharpR, &sharpR, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(renderer.dofCompositeShader, locBlurFull, &blurFull, SHADER_UNIFORM_FLOAT);
+        DrawTextureRec(renderer.compositeTarget.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
+        EndShaderMode();
+    }
+
     DrawFPS(10, 10);
-    
-    // Draw props statistics
-    DrawText(TextFormat("Rendered Props: %d/%d (%.1f%%)", 
-             renderedProps, visibleProps, 
-             visibleProps > 0 ? (float)renderedProps / visibleProps * 100.0f : 0), 
+    DrawText(TextFormat("Rendered Props: %d/%d (%.1f%%)",
+             renderedProps, visibleProps,
+             visibleProps > 0 ? (float)renderedProps / visibleProps * 100.0f : 0),
              10, 40, 20, WHITE);
-    
+
     EndDrawing();
 }
 
@@ -193,5 +307,10 @@ void UnloadRenderer(Renderer renderer) {
     }
     UnloadRenderTexture(renderer.fullResTarget);
     UnloadRenderTexture(renderer.quarterResTarget);
+    UnloadRenderTexture(renderer.compositeTarget);
+    UnloadRenderTexture(renderer.blurPing);
+    UnloadRenderTexture(renderer.blurPong);
+    UnloadShader(renderer.dofBlurShader);
+    UnloadShader(renderer.dofCompositeShader);
     UnloadShader(renderer.lightingShader);
 }

@@ -9,7 +9,12 @@
 typedef struct {
     RenderTexture2D fullResTarget;
     RenderTexture2D quarterResTarget;
+    RenderTexture2D compositeTarget; // sharp color: scene + props
+    RenderTexture2D blurPing;
+    RenderTexture2D blurPong;
     Shader lightingShader;         // Lighting shader
+    Shader dofBlurShader;
+    Shader dofCompositeShader;
     Vector3 lightPosition;         // Light position
     Shader skyboxShader;
     Model skyboxModel;
@@ -34,8 +39,8 @@ void BeginQuarterResRender(Renderer renderer);
 // End drawing to quarter resolution target
 void EndQuarterResRender(void);
 
-// Composite both render targets to screen
-void CompositeFinalFrame(Renderer renderer, int renderedProps, int visibleProps);
+// Composite both render targets to screen (camera used for world-space DOF distance)
+void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps);
 
 // Unload renderer resources
 void UnloadRenderer(Renderer renderer);
