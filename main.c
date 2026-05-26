@@ -43,6 +43,7 @@ int main(void) {
         "raw-assets/skybox_clear/sky_105_cubemap_2k/pz.png",
         "raw-assets/skybox_clear/sky_105_cubemap_2k/nz.png"
     );
+    InitSkyCloudDome(&renderer, "raw-assets/tiling_sky_clouds01.png");
 
     // Define level geometry (walls, floor)
     float roomWidth = 500.0f;
@@ -172,6 +173,7 @@ int main(void) {
         BeginFullResRender(renderer);
             BeginMode3D(gameState.camera);
                 DrawSkybox(renderer, gameState.camera);
+                DrawSkyCloudDome(renderer, gameState.camera);
                 // Draw scene
                 DrawScene(scene);
                 

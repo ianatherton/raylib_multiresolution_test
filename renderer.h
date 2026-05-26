@@ -20,12 +20,20 @@ typedef struct {
     Model skyboxModel;
     TextureCubemap skyboxCubemap;
     bool hasSkybox;
+    Model cloudDomeModel;
+    Shader cloudDomeShader;
+    int cloudDomeUvScaleLoc;
+    int cloudDomeLayerOpaqueLoc;
+    int cloudDomeTimeLoc;
+    bool hasCloudDome;
 } Renderer;
 
 // Initialize renderer with screen dimensions
 Renderer InitRenderer(int width, int height, float propsScale);
 bool InitSkybox(Renderer* renderer, const char* pxPath, const char* nxPath, const char* pyPath, const char* nyPath, const char* pzPath, const char* nzPath);
 void DrawSkybox(Renderer renderer, Camera3D camera);
+bool InitSkyCloudDome(Renderer* renderer, const char* tilingCloudPngPath);
+void DrawSkyCloudDome(Renderer renderer, Camera3D camera);
 
 // Begin drawing to full resolution target
 void BeginFullResRender(Renderer renderer);
