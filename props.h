@@ -14,49 +14,53 @@ typedef enum {
 typedef struct {
     Vector3 position;
     bool visible;
-    PropType type;   // Type of prop (billboard or 3D model)
-    BoundingBox dummyBounds; // CPU-side proxy volume for LOS testing
-    Vector3 dummyHalfExtents; // Half extents for dummy LOS cube
-    bool isOccluder; // Whether this prop can occlude others in LOS
+    PropType type;
+    BoundingBox dummyBounds;       // CPU-side proxy volume for debug draw
+    Vector3 dummyHalfExtents;
+    bool isOccluder;
+    unsigned int occlusionQuery;   // GL query object (0 = not yet created)
+    bool queryPending;             // query issued last frame, result not yet read
+    bool lastQueryVisible;         // last GPU result: true = visible (default)
+    bool inRange;                  // passed distance cull this frame
 } Prop;
 
 // Props collection
 typedef struct {
     Prop* props;
     int count;
-    Texture2D billboardTexture;  // Texture for billboard props
-    Rectangle billboardSourceRec; // Source rectangle for billboard texture
-    Vector2 billboardSize;       // Size of billboards
-    Model model;                 // 3D model for model props
-    bool rockHasNormalMap;       // Lighting shader samples texture1 when drawing rocks
-    Vector3 lastCameraPosition;  // Last camera position when LOS was checked
-    bool needsLOSUpdate;         // Flag to force LOS update
-    int visibleCount;            // Number of props visible after LOS check
-    int renderedCount;           // Number of props actually rendered (after frustum culling)
+    Texture2D billboardTexture;
+    Rectangle billboardSourceRec;
+    Vector2 billboardSize;
+    Model model;
+    bool rockHasNormalMap;
+    int visibleCount;
+    int renderedCount;
+    unsigned int proxyVBO;   // one vec3 center point per prop
+    unsigned int proxyVAO;
+    Shader proxyShader;
+    int proxyMvpLoc;
 } Props;
 
-// Initialize props with billboard and model data
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader);
 
-// Add a billboard prop at the specified position
 void AddBillboardProp(Props* props, Vector3 position, int index);
-
-// Add a model prop at the specified position
 void AddModelProp(Props* props, Vector3 position, int index);
 
-// Update prop visibility based on line of sight
+// Upload all prop proxy positions to the GPU VBO. Call once after all props are added.
+void BuildProxyVBO(Props* props);
+
+// Read back pending occlusion query results (non-blocking). Call at start of each frame.
+void ReadPropOcclusionResults(Props* props);
+
+// Distance-cull then update prop visibility from last query result.
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera);
 
-// Check if a point is within the camera frustum (with margin)
+// Issue per-prop occlusion queries in the full-res pass after scene geometry is drawn.
+void IssuePropOcclusionQueries(Props* props);
+
 bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin);
-
-// Draw visible props
 void DrawProps(Props* props, Camera3D camera);
-
-// Draw debug visualization for props
 void DrawPropsDebug(Props* props, Camera3D camera);
-
-// Unload prop resources
 void UnloadProps(Props* props);
 
 #endif // PROPS_H

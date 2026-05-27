@@ -25,7 +25,14 @@
       "Bash(DISPLAY=:0 gnome-screenshot -f /tmp/diagnose.png)",
       "Bash(wait)",
       "Bash(DISPLAY=:0 gnome-screenshot -f /tmp/fix2.png)",
-      "Bash(DISPLAY=:0 timeout 4 ./game)"
+      "Bash(DISPLAY=:0 timeout 4 ./game)",
+      "Bash(pkg-config --libs --cflags gl)",
+      "Read(//usr/local/include/**)",
+      "Bash(nm -D /usr/local/lib/libraylib.a)",
+      "Bash(nm /usr/local/lib/libraylib.a)",
+      "Bash(ldconfig -p)",
+      "Bash(sed -n '515,535p' /usr/include/GL/glext.h)",
+      "Bash(sed -n '750,765p' /usr/include/GL/glext.h)"
     ]
   }
 }

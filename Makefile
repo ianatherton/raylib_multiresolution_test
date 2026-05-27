@@ -3,7 +3,7 @@
 # Compiler and flags
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -I/usr/local/include -DPLATFORM_DESKTOP
-LDFLAGS = -L/usr/local/lib -lraylib -lm -lpthread -ldl -lrt -lX11
+LDFLAGS = -L/usr/local/lib -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
 
 # Source files
 SRCS = main.c scene.c props.c renderer.c lighting.c character.c

@@ -47,6 +47,11 @@ static inline void ApplyTextureFilterToAllMaterialMaps(Model model, int filter) 
 // Rock spawn height (floor top ~y=0); negative = sink into floor — ~half buried at DrawProps scale 0.5 for a ~1 unit rock
 #define PROPS_ROCK_Y_OFFSET (-0.25f)
 
+// Invisible depth-writing box drawn around the character so nearby props are occluded.
+// Increase width/depth if props still bleed through the sides; increase height if they show above the head.
+#define CHAR_OCCLUDER_WIDTH  1.2f
+#define CHAR_OCCLUDER_HEIGHT 1.85f
+
 // LOS (Line of Sight) optimization settings
 #define LOS_MIN_CAMERA_MOVE 0.5f       // Minimum distance camera must move before rechecking visibility
 #define LOS_MAX_GRASS_DISTANCE 45.0f   // Max grass visibility distance for cheap CPU culling

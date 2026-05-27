@@ -113,6 +113,9 @@ int main(void) {
     printf("Created %d grass props and %d rock props (total: %d)\n",
            numGrassProps, numRockProps, totalProps);
 
+    // Upload all prop proxy positions to GPU once
+    BuildProxyVBO(&props);
+
     // Initialize character
     Character character = InitCharacter(renderer.lightingShader);
     float charX = 0.0f, charZ = -5.0f;
@@ -128,6 +131,7 @@ int main(void) {
     while (!WindowShouldClose()) {   // Detect window close button or ESC key
         // Update
         //----------------------------------------------------------------------------------
+        ReadPropOcclusionResults(&props);  // non-blocking; reads last frame's GPU query results
         UpdateCamera(&gameState.camera, CAMERA_FIRST_PERSON); // Use Raylib's first person camera
         float eyeHeight = 1.8f;
         float previousY = gameState.camera.position.y;
@@ -204,6 +208,19 @@ int main(void) {
                 if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
                 if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
                 if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+
+                // Invisible depth-writing box so prop queries treat the character as a solid occluder.
+                // BLANK alpha=0 blends transparently; depth is still written independently.
+                DrawCubeV(
+                    (Vector3){ character.position.x,
+                               character.position.y + CHAR_OCCLUDER_HEIGHT * 0.5f,
+                               character.position.z },
+                    (Vector3){ CHAR_OCCLUDER_WIDTH, CHAR_OCCLUDER_HEIGHT, CHAR_OCCLUDER_WIDTH },
+                    BLANK
+                );
+
+                // Issue occlusion queries for in-range props against the now-rendered terrain depth
+                IssuePropOcclusionQueries(&props);
 
                 // Draw debug visualization if enabled
                 if (gameState.showDebugBoxes) {
