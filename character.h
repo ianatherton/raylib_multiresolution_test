@@ -23,6 +23,8 @@ typedef struct {
     Vector3 position;
     float yaw;
     float scale;
+    bool hasNormalMap;
+    bool hasMetalRough;
 } Character;
 
 Character InitCharacter(Shader lightingShader);

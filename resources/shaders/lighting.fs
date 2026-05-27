@@ -11,11 +11,13 @@ uniform vec3 lightPos;
 uniform vec3 lightColor;
 uniform vec3 viewPos;
 uniform vec2 uvScale; // (1,1) scene; higher = more tiling on props when set before draw
-uniform float useNormalMap; // 0 = geometry normal only; 1 = tangent-space texture1 (rocks)
-uniform sampler2D texture0;
-uniform sampler2D texture1; // tangent-space normal (OpenGL: Y+ up in map); MATERIAL_MAP_NORMAL
+uniform float useNormalMap;   // 0 = geometry normal only; 1 = sample texture1 for TBN normals
+uniform float useMetalRough;  // 0 = constant spec; 1 = texture2 metallic + texture3 roughness
+uniform sampler2D texture0; // albedo         (MATERIAL_MAP_ALBEDO     = 0)
+uniform sampler2D texture1; // normal map     (MATERIAL_MAP_METALNESS  = 1, used as normal slot)
+uniform sampler2D texture2; // metallic       (MATERIAL_MAP_NORMAL     = 2, repurposed for char)
+uniform sampler2D texture3; // roughness      (MATERIAL_MAP_ROUGHNESS  = 3)
 
-// Lighting parameters - using constants instead of uniforms for simplicity
 const float ambientStrength = 0.2;
 const float diffuseStrength = 1.0;
 const float specularStrength = 0.01;
@@ -47,8 +49,17 @@ void main()
 
     vec3 viewDir = normalize(viewPos - fragPos);
     vec3 reflectDir = reflect(-lightDir, N);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
-    vec3 specular = specularStrength * spec * lightColor;
+
+    float specStr = specularStrength;
+    float shine = shininess;
+    if (useMetalRough > 0.5) {
+        float metallic  = texture(texture2, tiledUV).r;
+        float roughness = texture(texture3, tiledUV).r;
+        specStr = mix(0.02, 0.9, metallic);
+        shine   = mix(4.0, 128.0, 1.0 - roughness);
+    }
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), shine);
+    vec3 specular = specStr * spec * lightColor;
 
     vec3 result = (ambient + diffuse + specular) * texColor.rgb;
     fragColor = vec4(result, texColor.a);

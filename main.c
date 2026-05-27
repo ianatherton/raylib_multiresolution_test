@@ -167,17 +167,16 @@ int main(void) {
             SetShaderValue(renderer.lightingShader, locViewPos, &viewPos, SHADER_UNIFORM_VEC3);
         }
 
-        int locUvScale = GetShaderLocation(renderer.lightingShader, "uvScale");
+        int locUvScale      = GetShaderLocation(renderer.lightingShader, "uvScale");
         int locUseNormalMap = GetShaderLocation(renderer.lightingShader, "useNormalMap");
+        int locUseMetalRough = GetShaderLocation(renderer.lightingShader, "useMetalRough");
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
         float useNormalScene = scene.floorHasNormalMap ? 1.0f : 0.0f;
-        if (locUvScale >= 0) {
-            SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleScene, SHADER_UNIFORM_VEC2);
-        }
-        if (locUseNormalMap >= 0) {
-            SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
-        }
+        float useMetalRoughOff = 0.0f;
+        if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
+        if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
+        if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
 
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
@@ -193,15 +192,18 @@ int main(void) {
                 // Draw scene
                 DrawScene(scene);
 
-                // Draw character (no UV scaling, no normal map)
-                float charNoNormal = 0.0f;
+                // Draw character with its own normal/metallic/roughness maps.
+                float charUseNormal    = character.hasNormalMap  ? 1.0f : 0.0f;
+                float charUseMetalRough = character.hasMetalRough ? 1.0f : 0.0f;
                 Vector2 charUvScale = {1.0f, 1.0f};
-                if (locUvScale >= 0) SetShaderValue(renderer.lightingShader, locUvScale, &charUvScale, SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &charNoNormal, SHADER_UNIFORM_FLOAT);
+                if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &charUvScale,       SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &charUseNormal,     SHADER_UNIFORM_FLOAT);
+                if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &charUseMetalRough, SHADER_UNIFORM_FLOAT);
                 DrawCharacter(character);
-                // Restore scene uniforms
-                if (locUvScale >= 0) SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleScene, SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
+                // Restore scene uniforms.
+                if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
+                if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
 
                 // Draw debug visualization if enabled
                 if (gameState.showDebugBoxes) {

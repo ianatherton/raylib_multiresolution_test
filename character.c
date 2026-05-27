@@ -24,22 +24,42 @@ Character InitCharacter(Shader lightingShader) {
         return ch;
     }
 
-    // Mixamo GLB exports bake the diffuse texture into the emissive slot with a black
-    // baseColor; move it to albedo so our shader's texture0 picks it up.
+    // The GLB has no tangents; compute them so normal mapping works.
+    for (int mi = 0; mi < ch.model.meshCount; mi++) {
+        GenMeshTangents(&ch.model.meshes[mi]);
+        UploadMesh(&ch.model.meshes[mi], false);
+    }
+
+    Texture2D diffuseTex = LoadTexture("assets/character/texture_diffuse.png");
+    Texture2D normalTex  = LoadTexture("assets/character/texture_normal.png");
+
     for (int i = 0; i < ch.model.materialCount; i++) {
         Material *mat = &ch.model.materials[i];
         if (mat->maps == NULL) continue;
-        Texture2D emTex = mat->maps[MATERIAL_MAP_EMISSION].texture;
-        if (emTex.id > 0) {
-            mat->maps[MATERIAL_MAP_ALBEDO].texture = emTex;
+
+        // Replace the emissive-slot bake with the clean diffuse.
+        if (diffuseTex.id > 0) {
+            mat->maps[MATERIAL_MAP_ALBEDO].texture = diffuseTex;
             mat->maps[MATERIAL_MAP_ALBEDO].color   = WHITE;
             mat->maps[MATERIAL_MAP_EMISSION].texture = (Texture2D){0};
+        } else {
+            Texture2D emTex = mat->maps[MATERIAL_MAP_EMISSION].texture;
+            if (emTex.id > 0) {
+                mat->maps[MATERIAL_MAP_ALBEDO].texture = emTex;
+                mat->maps[MATERIAL_MAP_ALBEDO].color   = WHITE;
+                mat->maps[MATERIAL_MAP_EMISSION].texture = (Texture2D){0};
+            }
         }
+
+        // Shader reads normals from texture1 (MATERIAL_MAP_METALNESS slot = 1).
+        if (normalTex.id > 0) mat->maps[MATERIAL_MAP_METALNESS].texture = normalTex;
+
+        mat->shader = lightingShader;
     }
 
-    for (int i = 0; i < ch.model.materialCount; i++) {
-        ch.model.materials[i].shader = lightingShader;
-    }
+    ch.hasNormalMap  = normalTex.id > 0;
+    ch.hasMetalRough = false;
+
     ApplyTextureFilterToAllMaterialMaps(ch.model, MAIN_TEXTURE_FILTER_MODE);
 
     for (int i = 0; i < CHAR_ANIM_COUNT; i++) {
