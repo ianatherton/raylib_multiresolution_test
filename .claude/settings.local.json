@@ -10,7 +10,17 @@
       "Bash(npm install *)",
       "Bash(dpkg -l)",
       "Bash(cd *)",
-      "Bash(make *)"
+      "Bash(make *)",
+      "Bash(python3 *)",
+      "Bash(DISPLAY=:99 timeout 5 ./game)",
+      "Bash(DISPLAY=:99 import -window root /tmp/character_texture_verify.png)",
+      "Bash(echo \"screenshot exit: $?\")",
+      "Bash(Xvfb :99 -screen 0 1280x720x24)",
+      "Bash(echo \"Xvfb PID: $!\")",
+      "Bash(DISPLAY=:99 glxinfo)",
+      "Bash(apt-cache show *)",
+      "Bash(sudo apt-get install -y xvfb scrot)",
+      "Bash(convert *)"
     ]
   }
 }

@@ -24,6 +24,19 @@ Character InitCharacter(Shader lightingShader) {
         return ch;
     }
 
+    // Mixamo GLB exports bake the diffuse texture into the emissive slot with a black
+    // baseColor; move it to albedo so our shader's texture0 picks it up.
+    for (int i = 0; i < ch.model.materialCount; i++) {
+        Material *mat = &ch.model.materials[i];
+        if (mat->maps == NULL) continue;
+        Texture2D emTex = mat->maps[MATERIAL_MAP_EMISSION].texture;
+        if (emTex.id > 0) {
+            mat->maps[MATERIAL_MAP_ALBEDO].texture = emTex;
+            mat->maps[MATERIAL_MAP_ALBEDO].color   = WHITE;
+            mat->maps[MATERIAL_MAP_EMISSION].texture = (Texture2D){0};
+        }
+    }
+
     for (int i = 0; i < ch.model.materialCount; i++) {
         ch.model.materials[i].shader = lightingShader;
     }
