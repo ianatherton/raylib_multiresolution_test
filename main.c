@@ -1,8 +1,9 @@
 #include "common.h"
-#include "scene.h"  
+#include "scene.h"
 #include "props.h"
 #include "renderer.h"
 #include "lighting.h"
+#include "character.h"
 #include <stdlib.h> // For rand() and srand()
 #include <time.h>   // For time()
 
@@ -109,8 +110,14 @@ int main(void) {
     }
     
     // Print prop counts
-    printf("Created %d grass props and %d rock props (total: %d)\n", 
+    printf("Created %d grass props and %d rock props (total: %d)\n",
            numGrassProps, numRockProps, totalProps);
+
+    // Initialize character
+    Character character = InitCharacter(renderer.lightingShader);
+    float charX = 0.0f, charZ = -5.0f;
+    character.position = (Vector3){ charX, GetTerrainHeightAt(scene, charX, charZ), charZ };
+    character.yaw = 180.0f; // face toward camera start
 
     DisableCursor(); // Hide cursor for FPS controls
 
@@ -130,6 +137,15 @@ int main(void) {
 
         // Toggle debug visualization with F1 key
         if (IsKeyPressed(KEY_F1)) gameState.showDebugBoxes = !gameState.showDebugBoxes;
+
+        // Cycle character animation with Tab
+        if (IsKeyPressed(KEY_TAB)) {
+            int next = ((int)character.currentAnim + 1) % CHAR_ANIM_COUNT;
+            SetCharacterAnim(&character, (CharAnimIndex)next);
+        }
+
+        // Update character
+        UpdateCharacter(&character, GetFrameTime());
         
         // Update prop visibility based on line of sight
         UpdatePropVisibility(&props, scene, gameState.camera);
@@ -176,7 +192,17 @@ int main(void) {
                 DrawSkyCloudDome(renderer, gameState.camera);
                 // Draw scene
                 DrawScene(scene);
-                
+
+                // Draw character (no UV scaling, no normal map)
+                float charNoNormal = 0.0f;
+                Vector2 charUvScale = {1.0f, 1.0f};
+                if (locUvScale >= 0) SetShaderValue(renderer.lightingShader, locUvScale, &charUvScale, SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &charNoNormal, SHADER_UNIFORM_FLOAT);
+                DrawCharacter(character);
+                // Restore scene uniforms
+                if (locUvScale >= 0) SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleScene, SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
+
                 // Draw debug visualization if enabled
                 if (gameState.showDebugBoxes) {
                     DrawSceneDebug(scene);
@@ -208,6 +234,7 @@ int main(void) {
     // De-Initialization
     //--------------------------------------------------------------------------------------
     // Unload resources
+    UnloadCharacter(&character);
     UnloadScene(scene);
     UnloadProps(&props);
     UnloadRenderer(renderer);  // This now handles unloading the shader

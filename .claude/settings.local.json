@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(blender --version)",
+      "Bash(pip3 list *)",
+      "Bash(npm list *)",
+      "Bash(npm info *)",
+      "Bash(pip3 show *)",
+      "Bash(python3 -c \"import trimesh\")",
+      "Bash(npm install *)",
+      "Bash(dpkg -l)",
+      "Bash(cd *)",
+      "Bash(make *)"
+    ]
+  }
+}
