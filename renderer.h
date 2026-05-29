@@ -8,7 +8,6 @@
 // Renderer context
 typedef struct {
     RenderTexture2D fullResTarget;
-    RenderTexture2D quarterResTarget;
     RenderTexture2D compositeTarget; // sharp color: scene + props
     RenderTexture2D blurPing;
     RenderTexture2D blurPong;
@@ -29,7 +28,7 @@ typedef struct {
 } Renderer;
 
 // Initialize renderer with screen dimensions
-Renderer InitRenderer(int width, int height, float propsScale);
+Renderer InitRenderer(int width, int height);
 bool InitSkybox(Renderer* renderer, const char* pxPath, const char* nxPath, const char* pyPath, const char* nyPath, const char* pzPath, const char* nzPath);
 void DrawSkybox(Renderer renderer, Camera3D camera);
 bool InitSkyCloudDome(Renderer* renderer, const char* tilingCloudPngPath);
@@ -41,13 +40,7 @@ void BeginFullResRender(Renderer renderer);
 // End drawing to full resolution target
 void EndFullResRender(void);
 
-// Begin drawing to quarter resolution target
-void BeginQuarterResRender(Renderer renderer);
-
-// End drawing to quarter resolution target
-void EndQuarterResRender(void);
-
-// Composite both render targets to screen (camera used for world-space DOF distance)
+// Composite render target to screen (camera used for world-space DOF distance)
 void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps);
 
 // Unload renderer resources

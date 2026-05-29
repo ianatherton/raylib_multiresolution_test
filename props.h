@@ -43,6 +43,8 @@ typedef struct {
     Material* rockInstancedMaterials;  // clone of model.materials using instancedShader
     Matrix* rockTransformBuffer;       // per-frame scratch for visible instance transforms
     int rockCount;
+    Shader foliageShader;
+    int    foliageCamPosLoc;
 } Props;
 
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader);

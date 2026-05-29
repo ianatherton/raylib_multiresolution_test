@@ -34,7 +34,7 @@ int main(void) {
     gameState.showDebugBoxes = false;                             // Debug visualization flag
 
     // Initialize renderer
-    Renderer renderer = InitRenderer(SCREEN_WIDTH, SCREEN_HEIGHT, PROPS_RENDER_SCALE);
+    Renderer renderer = InitRenderer(SCREEN_WIDTH, SCREEN_HEIGHT);
     InitSkybox(
         &renderer,
         "raw-assets/skybox_clear/sky_105_cubemap_2k/px.png",
@@ -216,18 +216,25 @@ int main(void) {
                 if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
                 if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
 
-                // Invisible depth-writing box so prop queries treat the character as a solid occluder.
-                // BLANK alpha=0 blends transparently; depth is still written independently.
-                DrawCubeV(
-                    (Vector3){ character.position.x,
-                               character.position.y + CHAR_OCCLUDER_HEIGHT * 0.5f,
-                               character.position.z },
-                    (Vector3){ CHAR_OCCLUDER_WIDTH, CHAR_OCCLUDER_HEIGHT, CHAR_OCCLUDER_WIDTH },
-                    BLANK
-                );
-
                 // Issue occlusion queries for in-range props against the now-rendered terrain depth
                 IssuePropOcclusionQueries(&props);
+
+                // Draw props at full resolution
+                float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
+                if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleRocks,   SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
+                {
+                    int iLocUvScale       = GetShaderLocation(props.instancedShader, "uvScale");
+                    int iLocUseNormalMap  = GetShaderLocation(props.instancedShader, "useNormalMap");
+                    int iLocUseMetalRough = GetShaderLocation(props.instancedShader, "useMetalRough");
+                    if (iLocUvScale >= 0)       SetShaderValue(props.instancedShader, iLocUvScale,       &uvScaleRocks,     SHADER_UNIFORM_VEC2);
+                    if (iLocUseNormalMap >= 0)  SetShaderValue(props.instancedShader, iLocUseNormalMap,  &useNormalRocks,   SHADER_UNIFORM_FLOAT);
+                    if (iLocUseMetalRough >= 0) SetShaderValue(props.instancedShader, iLocUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
+                }
+                DrawProps(&props, gameState.camera);
+                // Restore scene uniforms after props
+                if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleScene,   SHADER_UNIFORM_VEC2);
+                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
 
                 // Draw debug visualization if enabled
                 if (gameState.showDebugBoxes) {
@@ -237,31 +244,7 @@ int main(void) {
             EndMode3D();
         EndFullResRender();
 
-        if (locUvScale >= 0) {
-            SetShaderValue(renderer.lightingShader, locUvScale, &uvScaleRocks, SHADER_UNIFORM_VEC2);
-        }
-        float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
-        if (locUseNormalMap >= 0) {
-            SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
-        }
-        {
-            int iLocUvScale      = GetShaderLocation(props.instancedShader, "uvScale");
-            int iLocUseNormalMap = GetShaderLocation(props.instancedShader, "useNormalMap");
-            int iLocUseMetalRough = GetShaderLocation(props.instancedShader, "useMetalRough");
-            if (iLocUvScale >= 0)       SetShaderValue(props.instancedShader, iLocUvScale,       &uvScaleRocks,      SHADER_UNIFORM_VEC2);
-            if (iLocUseNormalMap >= 0)  SetShaderValue(props.instancedShader, iLocUseNormalMap,  &useNormalRocks,    SHADER_UNIFORM_FLOAT);
-            if (iLocUseMetalRough >= 0) SetShaderValue(props.instancedShader, iLocUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
-        }
-
-        // 2. Draw quarter-resolution props (grass) to quarterResTarget
-        BeginQuarterResRender(renderer);
-            BeginMode3D(gameState.camera);
-                // Draw props
-                DrawProps(&props, gameState.camera);
-            EndMode3D();
-        EndQuarterResRender();
-
-        // 3. Composite to screen and draw UI
+        // 2. Composite to screen and draw UI
         CompositeFinalFrame(renderer, gameState.camera, props.renderedCount, props.visibleCount);
     }
 

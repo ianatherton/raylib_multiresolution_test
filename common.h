@@ -10,9 +10,6 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
-// Rendering settings
-#define PROPS_RENDER_SCALE 0.4 // prop resolution scale
-
 // DOF in world meters from camera: no blur at or below DOF_SHARP_RADIUS_M; full blur by DOF_BLUR_FULL_DIST_M
 #define DOF_SHARP_RADIUS_M 4.0f
 #define DOF_BLUR_FULL_DIST_M 55.0f

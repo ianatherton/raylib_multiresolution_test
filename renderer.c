@@ -128,25 +128,16 @@ static const char* CLOUD_DOME_FS = "#version 330 core\n"
 "finalColor = vec4(col.rgb, col.a * layerOpaque);\n"
 "}\n";
 
-Renderer InitRenderer(int width, int height, float propsScale) {
+Renderer InitRenderer(int width, int height) {
     Renderer renderer = {0};
-    
-    // Full / quarter FBOs need sampleable depth for distance-based DOF
-    int qw = (int)(width * propsScale);
-    int qh = (int)(height * propsScale);
-    if (qw < 1) qw = 1;
-    if (qh < 1) qh = 1;
-    renderer.fullResTarget = LoadRenderTextureDepthReadable(width, height);
-    renderer.quarterResTarget = LoadRenderTextureDepthReadable(qw, qh);
+
+    renderer.fullResTarget   = LoadRenderTextureDepthReadable(width, height);
     renderer.compositeTarget = LoadRenderTexture(width, height);
-    renderer.blurPing = LoadRenderTexture(width, height);
-    renderer.blurPong = LoadRenderTexture(width, height);
-    
-    // Apply texture filtering to both render targets with their respective modes
+    renderer.blurPing        = LoadRenderTexture(width, height);
+    renderer.blurPong        = LoadRenderTexture(width, height);
+
     SetTextureFilter(renderer.fullResTarget.texture, MAIN_TEXTURE_FILTER_MODE);
-    SetTextureFilter(renderer.quarterResTarget.texture, PROPS_TEXTURE_FILTER_MODE);
-    SetTextureFilter(renderer.fullResTarget.depth, TEXTURE_FILTER_POINT);
-    SetTextureFilter(renderer.quarterResTarget.depth, TEXTURE_FILTER_POINT);
+    SetTextureFilter(renderer.fullResTarget.depth,   TEXTURE_FILTER_POINT);
     SetTextureFilter(renderer.compositeTarget.texture, MAIN_TEXTURE_FILTER_MODE);
     SetTextureFilter(renderer.blurPing.texture, MAIN_TEXTURE_FILTER_MODE);
     SetTextureFilter(renderer.blurPong.texture, MAIN_TEXTURE_FILTER_MODE);
@@ -361,26 +352,14 @@ void EndFullResRender(void) {
     EndTextureMode();
 }
 
-void BeginQuarterResRender(Renderer renderer) {
-    BeginTextureMode(renderer.quarterResTarget);
-    ClearBackground(BLANK); // Clear with transparency
-}
-
-void EndQuarterResRender(void) {
-    EndTextureMode();
-}
-
 void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps) {
     float w = (float)renderer.fullResTarget.texture.width;
     float h = (float)renderer.fullResTarget.texture.height;
     Rectangle fullFlipped = { 0.0f, 0.0f, w, -h };
-    Rectangle propsFlipped = { 0.0f, 0.0f, (float)renderer.quarterResTarget.texture.width, (float)-renderer.quarterResTarget.texture.height };
-    Rectangle destFull = { 0.0f, 0.0f, w, h };
 
     BeginTextureMode(renderer.compositeTarget);
     ClearBackground(BLACK);
     DrawTextureRec(renderer.fullResTarget.texture, fullFlipped, (Vector2){ 0.0f, 0.0f }, WHITE);
-    DrawTexturePro(renderer.quarterResTarget.texture, propsFlipped, destFull, (Vector2){ 0.0f, 0.0f }, 0.0f, WHITE);
     EndTextureMode();
 
     if (renderer.dofBlurShader.id != 0 && renderer.dofCompositeShader.id != 0) {
@@ -419,8 +398,6 @@ void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, 
         int locSharp = GetShaderLocation(renderer.dofCompositeShader, "sharpTex");
         int locBlur = GetShaderLocation(renderer.dofCompositeShader, "blurTex");
         int locDs = GetShaderLocation(renderer.dofCompositeShader, "depthScene");
-        int locDp = GetShaderLocation(renderer.dofCompositeShader, "depthProps");
-        int locPc = GetShaderLocation(renderer.dofCompositeShader, "propsColorTex");
         int locInvVP = GetShaderLocation(renderer.dofCompositeShader, "invViewProj");
         int locCam = GetShaderLocation(renderer.dofCompositeShader, "camPos");
         int locSharpR = GetShaderLocation(renderer.dofCompositeShader, "dofSharpRadiusM");
@@ -428,8 +405,6 @@ void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, 
         SetShaderValueTexture(renderer.dofCompositeShader, locSharp, renderer.compositeTarget.texture);
         SetShaderValueTexture(renderer.dofCompositeShader, locBlur, renderer.blurPong.texture);
         SetShaderValueTexture(renderer.dofCompositeShader, locDs, renderer.fullResTarget.depth);
-        SetShaderValueTexture(renderer.dofCompositeShader, locDp, renderer.quarterResTarget.depth);
-        SetShaderValueTexture(renderer.dofCompositeShader, locPc, renderer.quarterResTarget.texture);
         Matrix invVP = DofInvViewProj(camera, (int)w, (int)h);
         Vector3 camPos = camera.position;
         float sharpR = DOF_SHARP_RADIUS_M;
@@ -461,7 +436,6 @@ void UnloadRenderer(Renderer renderer) {
         UnloadShader(renderer.cloudDomeShader);
     }
     UnloadRenderTexture(renderer.fullResTarget);
-    UnloadRenderTexture(renderer.quarterResTarget);
     UnloadRenderTexture(renderer.compositeTarget);
     UnloadRenderTexture(renderer.blurPing);
     UnloadRenderTexture(renderer.blurPong);

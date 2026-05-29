@@ -117,6 +117,10 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     props.instancedShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(props.instancedShader, "texture0");
     props.instancedShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(props.instancedShader, "texture1");
 
+    props.foliageShader    = LoadShader("resources/shaders/foliage.vs",
+                                        "resources/shaders/foliage.fs");
+    props.foliageCamPosLoc = GetShaderLocation(props.foliageShader, "cameraPos");
+
     // Clone rock materials with the instanced shader so DrawMeshInstanced can use them
     props.rockInstancedMaterials = (Material*)malloc(props.model.materialCount * sizeof(Material));
     for (int i = 0; i < props.model.materialCount; i++) {
@@ -414,8 +418,9 @@ void DrawProps(Props* props, Camera3D camera) {
     if (billboardCount > 0) {
         qsort(visibleBillboards, billboardCount, sizeof(BillboardDepthInfo), CompareBillboardDepth);
 
-        rlDisableDepthMask();
         float t = (float)GetTime();
+        BeginShaderMode(props->foliageShader);
+        SetShaderValue(props->foliageShader, props->foliageCamPosLoc, &camera.position, SHADER_UNIFORM_VEC3);
         for (int i = 0; i < billboardCount; i++) {
             int index = visibleBillboards[i].index;
             Vector3 p = props->props[index].position;
@@ -430,7 +435,7 @@ void DrawProps(Props* props, Camera3D camera) {
             float leanAz = cosf(t * (speed * 0.73f) + phase * 1.37f) * maxLeanRad * 0.48f;
             DrawGrassTexturedPlane(p, props->billboardTexture, props->billboardSourceRec, props->billboardSize, yaw, pitch, leanAx, leanAz, WHITE);
         }
-        rlEnableDepthMask();
+        EndShaderMode();
     }
 
     free(visibleBillboards);
@@ -472,6 +477,7 @@ void UnloadProps(Props* props) {
     free(props->rockTransformBuffer);
     free(props->rockInstancedMaterials);
     UnloadShader(props->instancedShader);
+    UnloadShader(props->foliageShader);
 
     UnloadTexture(props->billboardTexture);
     UnloadModel(props->model);
