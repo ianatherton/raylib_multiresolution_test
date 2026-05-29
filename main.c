@@ -169,6 +169,13 @@ int main(void) {
             SetShaderValue(renderer.lightingShader, locLightPos, &lightPos, SHADER_UNIFORM_VEC3);
             SetShaderValue(renderer.lightingShader, locLightColor, &lightColor, SHADER_UNIFORM_VEC3);
             SetShaderValue(renderer.lightingShader, locViewPos, &viewPos, SHADER_UNIFORM_VEC3);
+
+            int iLocLightPos   = GetShaderLocation(props.instancedShader, "lightPos");
+            int iLocLightColor = GetShaderLocation(props.instancedShader, "lightColor");
+            int iLocViewPos    = GetShaderLocation(props.instancedShader, "viewPos");
+            if (iLocLightPos >= 0)   SetShaderValue(props.instancedShader, iLocLightPos,   &lightPos,   SHADER_UNIFORM_VEC3);
+            if (iLocLightColor >= 0) SetShaderValue(props.instancedShader, iLocLightColor, &lightColor, SHADER_UNIFORM_VEC3);
+            if (iLocViewPos >= 0)    SetShaderValue(props.instancedShader, iLocViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
         }
 
         int locUvScale      = GetShaderLocation(renderer.lightingShader, "uvScale");
@@ -236,6 +243,14 @@ int main(void) {
         float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
         if (locUseNormalMap >= 0) {
             SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
+        }
+        {
+            int iLocUvScale      = GetShaderLocation(props.instancedShader, "uvScale");
+            int iLocUseNormalMap = GetShaderLocation(props.instancedShader, "useNormalMap");
+            int iLocUseMetalRough = GetShaderLocation(props.instancedShader, "useMetalRough");
+            if (iLocUvScale >= 0)       SetShaderValue(props.instancedShader, iLocUvScale,       &uvScaleRocks,      SHADER_UNIFORM_VEC2);
+            if (iLocUseNormalMap >= 0)  SetShaderValue(props.instancedShader, iLocUseNormalMap,  &useNormalRocks,    SHADER_UNIFORM_FLOAT);
+            if (iLocUseMetalRough >= 0) SetShaderValue(props.instancedShader, iLocUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
         }
 
         // 2. Draw quarter-resolution props (grass) to quarterResTarget

@@ -31,6 +31,7 @@ static const char* PROXY_FS =
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader) {
     Props props = {0};
     props.rockHasNormalMap = false;
+    props.rockCount = modelCount;
     int totalCount = billboardCount + modelCount;
 
     props.props = (Prop*)malloc(totalCount * sizeof(Prop));
@@ -106,6 +107,25 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
         printf("Rock model: %d materials, %d meshes\n", props.model.materialCount, props.model.meshCount);
     }
     ApplyTextureFilterToAllMaterialMaps(props.model, PROPS_TEXTURE_FILTER_MODE);
+
+    // Instanced shader for rock batch draws (same fragment shader, instanced vertex shader)
+    props.instancedShader = LoadShader(
+        "resources/shaders/lighting_instanced.vs",
+        "resources/shaders/lighting.fs"
+    );
+    props.instancedShader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] = 9;  // RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCE_TX
+    props.instancedShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(props.instancedShader, "texture0");
+    props.instancedShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(props.instancedShader, "texture1");
+
+    // Clone rock materials with the instanced shader so DrawMeshInstanced can use them
+    props.rockInstancedMaterials = (Material*)malloc(props.model.materialCount * sizeof(Material));
+    for (int i = 0; i < props.model.materialCount; i++) {
+        props.rockInstancedMaterials[i] = props.model.materials[i];
+        props.rockInstancedMaterials[i].shader = props.instancedShader;
+    }
+
+    // Scratch buffer for per-frame visible instance transforms (worst case: all rocks visible)
+    props.rockTransformBuffer = (Matrix*)malloc(modelCount * sizeof(Matrix));
 
     // Proxy occlusion shader and GPU objects
     props.proxyShader = LoadShaderFromMemory(PROXY_VS, PROXY_FS);
@@ -355,6 +375,8 @@ void DrawProps(Props* props, Camera3D camera) {
 
     BillboardDepthInfo* visibleBillboards = (BillboardDepthInfo*)malloc(props->count * sizeof(BillboardDepthInfo));
     int billboardCount = 0;
+    int instanceCount = 0;
+    Matrix baseTransform = props->model.transform;
 
     for (int i = 0; i < props->count; i++) {
         if (!props->props[i].visible) continue;
@@ -370,12 +392,22 @@ void DrawProps(Props* props, Camera3D camera) {
             float modelScaleRand = HashToUnitFloat((unsigned int)(i * 7919 + 101));
             float scale = 0.38f + modelScaleRand * 0.34f;
             float rotationAngle = (float)((i * 37) % 360);
-            DrawModelEx(props->model,
-                       props->props[i].position,
-                       (Vector3){0.0f, 1.0f, 0.0f},
-                       rotationAngle,
-                       (Vector3){scale, scale, scale},
-                       WHITE);
+            Vector3 pos = props->props[i].position;
+            Matrix t = MatrixMultiply(
+                MatrixMultiply(MatrixScale(scale, scale, scale), MatrixRotateY(rotationAngle * DEG2RAD)),
+                MatrixTranslate(pos.x, pos.y, pos.z)
+            );
+            props->rockTransformBuffer[instanceCount++] = MatrixMultiply(baseTransform, t);
+        }
+    }
+
+    if (instanceCount > 0) {
+        for (int mi = 0; mi < props->model.meshCount; mi++) {
+            int matIdx = props->model.meshMaterial[mi];
+            DrawMeshInstanced(props->model.meshes[mi],
+                              props->rockInstancedMaterials[matIdx],
+                              props->rockTransformBuffer,
+                              instanceCount);
         }
     }
 
@@ -436,6 +468,10 @@ void UnloadProps(Props* props) {
     glDeleteVertexArrays(1, &props->proxyVAO);
     glDeleteBuffers(1, &props->proxyVBO);
     UnloadShader(props->proxyShader);
+
+    free(props->rockTransformBuffer);
+    free(props->rockInstancedMaterials);
+    UnloadShader(props->instancedShader);
 
     UnloadTexture(props->billboardTexture);
     UnloadModel(props->model);
