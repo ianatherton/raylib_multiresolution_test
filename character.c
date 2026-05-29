@@ -1,12 +1,18 @@
 #include "character.h"
 #include <stdio.h>
 
-// Zero out the root bone's XZ translation for every frame so the animation
-// plays in-place — the caller controls world-space position via character.position.
+// Remove horizontal root motion from an animation. framePoses holds global bone
+// transforms, so the root's XZ offset is already baked into every descendant.
+// We subtract the root's per-frame XZ from all bones so the skeleton stays
+// centred at origin XZ; the caller drives world position via character.position.
 static void StripRootMotionXZ(ModelAnimation* anim) {
     for (int f = 0; f < anim->frameCount; f++) {
-        anim->framePoses[f][0].translation.x = 0.0f;
-        anim->framePoses[f][0].translation.z = 0.0f;
+        float dx = anim->framePoses[f][0].translation.x;
+        float dz = anim->framePoses[f][0].translation.z;
+        for (int b = 0; b < anim->boneCount; b++) {
+            anim->framePoses[f][b].translation.x -= dx;
+            anim->framePoses[f][b].translation.z -= dz;
+        }
     }
 }
 
