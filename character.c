@@ -1,6 +1,15 @@
 #include "character.h"
 #include <stdio.h>
 
+// Zero out the root bone's XZ translation for every frame so the animation
+// plays in-place — the caller controls world-space position via character.position.
+static void StripRootMotionXZ(ModelAnimation* anim) {
+    for (int f = 0; f < anim->frameCount; f++) {
+        anim->framePoses[f][0].translation.x = 0.0f;
+        anim->framePoses[f][0].translation.z = 0.0f;
+    }
+}
+
 static const char* ANIM_PATHS[CHAR_ANIM_COUNT] = {
     "assets/character/sword_and_shield_idle.glb",
     "assets/character/sword_and_shield_walk.glb",
@@ -68,6 +77,8 @@ Character InitCharacter(Shader lightingShader) {
         if (count > 0 && ch.anims[i] != NULL) {
             ch.animFrameCounts[i] = ch.anims[i][0].frameCount;
             printf("Character anim '%s': %d frames\n", ANIM_NAMES[i], ch.animFrameCounts[i]);
+            if (i == CHAR_ANIM_WALK || i == CHAR_ANIM_RUN)
+                StripRootMotionXZ(&ch.anims[i][0]);
         } else {
             printf("WARNING: Failed to load anim '%s'\n", ANIM_NAMES[i]);
             ch.animFrameCounts[i] = 0;

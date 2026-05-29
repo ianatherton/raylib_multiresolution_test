@@ -120,13 +120,18 @@ int main(void) {
     Character character = InitCharacter(renderer.lightingShader);
     float charX = 0.0f, charZ = -5.0f;
     character.position = (Vector3){ charX, GetTerrainHeightAt(scene, charX, charZ), charZ };
-    character.yaw = 180.0f; // face toward camera start
+    character.yaw = 0.0f;
 
     DisableCursor(); // Hide cursor for FPS controls
 
     // Parallax scale levels: 1=off, 2-5 increasing intensity
     static const float parallaxLevels[5] = { 0.0f, 0.02f, 0.06f, 0.12f, 0.24f };
     float parallaxScale = parallaxLevels[2]; // start at default
+
+    // Third-person orbit camera state
+    float camYaw   = 0.0f;   // horizontal orbit angle (degrees)
+    float camPitch = 20.0f;  // vertical elevation angle (degrees)
+    float camDist  = 5.0f;   // orbit radius (world units)
 
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
@@ -136,12 +141,7 @@ int main(void) {
         // Update
         //----------------------------------------------------------------------------------
         ReadPropOcclusionResults(&props);  // non-blocking; reads last frame's GPU query results
-        UpdateCamera(&gameState.camera, CAMERA_FIRST_PERSON); // Use Raylib's first person camera
-        float eyeHeight = 1.8f;
-        float previousY = gameState.camera.position.y;
-        float terrainY = GetTerrainHeightAt(scene, gameState.camera.position.x, gameState.camera.position.z);
-        gameState.camera.position.y = terrainY + eyeHeight;
-        gameState.camera.target.y += (gameState.camera.position.y - previousY);
+        float dt = GetFrameTime();
 
         // Toggle debug visualization with F1 key
         if (IsKeyPressed(KEY_F1)) gameState.showDebugBoxes = !gameState.showDebugBoxes;
@@ -153,17 +153,55 @@ int main(void) {
         if (IsKeyPressed(KEY_FOUR))  parallaxScale = parallaxLevels[3];
         if (IsKeyPressed(KEY_FIVE))  parallaxScale = parallaxLevels[4];
 
-        // Cycle character animation with Tab
-        if (IsKeyPressed(KEY_TAB)) {
-            int next = ((int)character.currentAnim + 1) % CHAR_ANIM_COUNT;
-            SetCharacterAnim(&character, (CharAnimIndex)next);
+        // Orbit camera: mouse drag rotates around character
+        Vector2 mouseDelta = GetMouseDelta();
+        camYaw   -= mouseDelta.x * 0.2f;
+        camPitch += mouseDelta.y * 0.2f;
+        camPitch  = Clamp(camPitch, 5.0f, 75.0f);
+
+        // WASD: move character in the camera's horizontal plane
+        float sy = sinf(camYaw * DEG2RAD);
+        float cy = cosf(camYaw * DEG2RAD);
+        float moveDX = 0.0f, moveDZ = 0.0f;
+        if (IsKeyDown(KEY_W)) { moveDX -= sy; moveDZ -= cy; }
+        if (IsKeyDown(KEY_S)) { moveDX += sy; moveDZ += cy; }
+        if (IsKeyDown(KEY_A)) { moveDX -= cy; moveDZ += sy; }
+        if (IsKeyDown(KEY_D)) { moveDX += cy; moveDZ -= sy; }
+
+        bool moving = (moveDX != 0.0f || moveDZ != 0.0f);
+        if (moving) {
+            float len = sqrtf(moveDX*moveDX + moveDZ*moveDZ);
+            moveDX /= len;
+            moveDZ /= len;
+            float moveSpeed = 4.0f;
+            character.position.x += moveDX * moveSpeed * dt;
+            character.position.z += moveDZ * moveSpeed * dt;
+            SetCharacterAnim(&character, CHAR_ANIM_WALK);
+        } else {
+            SetCharacterAnim(&character, CHAR_ANIM_IDLE);
         }
+        character.yaw = camYaw + 180.0f; // face away from camera
+        character.position.y = GetTerrainHeightAt(scene, character.position.x, character.position.z);
+
+        // Build orbit camera from updated character position
+        Vector3 charFocus = { character.position.x, character.position.y + 1.4f, character.position.z };
+        float cp = cosf(camPitch * DEG2RAD);
+        float sp = sinf(camPitch * DEG2RAD);
+        gameState.camera.target   = charFocus;
+        gameState.camera.position = (Vector3){
+            charFocus.x + sy * cp * camDist,
+            charFocus.y + sp * camDist,
+            charFocus.z + cy * cp * camDist
+        };
 
         // Update character
-        UpdateCharacter(&character, GetFrameTime());
-        
+        UpdateCharacter(&character, dt);
+
         // Update prop visibility based on line of sight
         UpdatePropVisibility(&props, scene, gameState.camera);
+
+        // Light follows player
+        light.position = (Vector3){ character.position.x, character.position.y + 6.0f, character.position.z };
 
         // Update light position in renderer
         renderer.lightPosition = light.position;
