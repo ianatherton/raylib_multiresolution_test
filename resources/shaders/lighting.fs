@@ -23,7 +23,7 @@ const float ambientStrength  = 0.2;
 const float diffuseStrength  = 1.0;
 const float specularStrength = 0.01;
 const float shininess        = 16.0;
-const float parallaxScale    = 0.06;
+uniform float parallaxScale;
 
 out vec4 fragColor;
 

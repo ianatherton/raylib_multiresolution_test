@@ -124,6 +124,10 @@ int main(void) {
 
     DisableCursor(); // Hide cursor for FPS controls
 
+    // Parallax scale levels: 1=off, 2-5 increasing intensity
+    static const float parallaxLevels[5] = { 0.0f, 0.02f, 0.06f, 0.12f, 0.24f };
+    float parallaxScale = parallaxLevels[2]; // start at default
+
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
@@ -141,6 +145,13 @@ int main(void) {
 
         // Toggle debug visualization with F1 key
         if (IsKeyPressed(KEY_F1)) gameState.showDebugBoxes = !gameState.showDebugBoxes;
+
+        // Parallax level keys 1-5
+        if (IsKeyPressed(KEY_ONE))   parallaxScale = parallaxLevels[0];
+        if (IsKeyPressed(KEY_TWO))   parallaxScale = parallaxLevels[1];
+        if (IsKeyPressed(KEY_THREE)) parallaxScale = parallaxLevels[2];
+        if (IsKeyPressed(KEY_FOUR))  parallaxScale = parallaxLevels[3];
+        if (IsKeyPressed(KEY_FIVE))  parallaxScale = parallaxLevels[4];
 
         // Cycle character animation with Tab
         if (IsKeyPressed(KEY_TAB)) {
@@ -178,20 +189,22 @@ int main(void) {
             if (iLocViewPos >= 0)    SetShaderValue(props.instancedShader, iLocViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
         }
 
-        int locUvScale       = GetShaderLocation(renderer.lightingShader, "uvScale");
-        int locUseNormalMap  = GetShaderLocation(renderer.lightingShader, "useNormalMap");
-        int locUseMetalRough = GetShaderLocation(renderer.lightingShader, "useMetalRough");
-        int locUseParallax   = GetShaderLocation(renderer.lightingShader, "useParallax");
+        int locUvScale         = GetShaderLocation(renderer.lightingShader, "uvScale");
+        int locUseNormalMap    = GetShaderLocation(renderer.lightingShader, "useNormalMap");
+        int locUseMetalRough   = GetShaderLocation(renderer.lightingShader, "useMetalRough");
+        int locUseParallax     = GetShaderLocation(renderer.lightingShader, "useParallax");
+        int locParallaxScale   = GetShaderLocation(renderer.lightingShader, "parallaxScale");
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
         float useNormalScene    = scene.floorHasNormalMap  ? 1.0f : 0.0f;
-        float useParallaxScene  = scene.floorHasHeightMap  ? 1.0f : 0.0f;
+        float useParallaxScene  = (scene.floorHasHeightMap && parallaxScale > 0.0f) ? 1.0f : 0.0f;
         float useMetalRoughOff  = 0.0f;
         float useParallaxOff    = 0.0f;
         if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,     SHADER_UNIFORM_VEC2);
         if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,   SHADER_UNIFORM_FLOAT);
         if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
         if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene, SHADER_UNIFORM_FLOAT);
+        if (locParallaxScale >= 0) SetShaderValue(renderer.lightingShader, locParallaxScale, &parallaxScale,    SHADER_UNIFORM_FLOAT);
 
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
@@ -251,7 +264,7 @@ int main(void) {
         EndFullResRender();
 
         // 2. Composite to screen and draw UI
-        CompositeFinalFrame(renderer, gameState.camera, props.renderedCount, props.visibleCount);
+        CompositeFinalFrame(renderer, gameState.camera, props.renderedCount, props.visibleCount, parallaxScale);
     }
 
     // De-Initialization

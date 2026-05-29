@@ -353,7 +353,7 @@ void EndFullResRender(void) {
     EndTextureMode();
 }
 
-void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps) {
+void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps, float parallaxScale) {
     float w = (float)renderer.fullResTarget.texture.width;
     float h = (float)renderer.fullResTarget.texture.height;
     Rectangle fullFlipped = { 0.0f, 0.0f, w, -h };
@@ -423,6 +423,10 @@ void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, 
              renderedProps, visibleProps,
              visibleProps > 0 ? (float)renderedProps / visibleProps * 100.0f : 0),
              10, 40, 20, WHITE);
+    if (parallaxScale <= 0.0f)
+        DrawText("Parallax: OFF  [1-5]", 10, 65, 20, RAYWHITE);
+    else
+        DrawText(TextFormat("Parallax: %.2f  [1-5]", parallaxScale), 10, 65, 20, RAYWHITE);
 
     EndDrawing();
 }

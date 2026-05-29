@@ -41,7 +41,7 @@ void BeginFullResRender(Renderer renderer);
 void EndFullResRender(void);
 
 // Composite render target to screen (camera used for world-space DOF distance)
-void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps);
+void CompositeFinalFrame(Renderer renderer, Camera3D camera, int renderedProps, int visibleProps, float parallaxScale);
 
 // Unload renderer resources
 void UnloadRenderer(Renderer renderer);
