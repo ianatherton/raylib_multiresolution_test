@@ -111,7 +111,7 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     // Instanced shader for rock batch draws (same fragment shader, instanced vertex shader)
     props.instancedShader = LoadShader(
         "resources/shaders/lighting_instanced.vs",
-        "resources/shaders/lighting.fs"
+        "resources/shaders/lighting_rock.fs"
     );
     props.instancedShader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] = 9;  // RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCE_TX
     props.instancedShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(props.instancedShader, "texture0");
@@ -353,29 +353,8 @@ static void DrawGrassTexturedPlane(Vector3 baseCenter, Texture2D tex, Rectangle 
     rlSetTexture(0);
 }
 
-static void DrawGroundContactAO(const Prop* prop) {
-    float aoRadius = (prop->type == PROP_MODEL) ? 0.48f : 0.20f;
-    float aoHeight = 0.01f;
-    float aoYOffset = (prop->type == PROP_MODEL) ? 0.02f : 0.01f;
-    unsigned char aoAlpha = (prop->type == PROP_MODEL) ? 195 : 81;
-    Vector3 aoBase = { prop->position.x, prop->position.y + aoYOffset,            prop->position.z };
-    Vector3 aoTop  = { prop->position.x, prop->position.y + aoYOffset + aoHeight,  prop->position.z };
-    DrawCylinderEx(aoBase, aoTop, aoRadius * 0.55f, aoRadius, 12, (Color){0, 0, 0, aoAlpha});
-}
-
 void DrawProps(Props* props, Camera3D camera) {
     props->renderedCount = 0;
-
-    const int maxGroundAoDraws = 3500;
-    int groundAoDraws = 0;
-    rlDisableDepthMask();
-    for (int i = 0; i < props->count && groundAoDraws < maxGroundAoDraws; i++) {
-        if (!props->props[i].visible) continue;
-        if (!IsPointInFrustum(props->props[i].position, camera, 1.0f)) continue;
-        DrawGroundContactAO(&props->props[i]);
-        groundAoDraws++;
-    }
-    rlEnableDepthMask();
 
     BillboardDepthInfo* visibleBillboards = (BillboardDepthInfo*)malloc(props->count * sizeof(BillboardDepthInfo));
     int billboardCount = 0;

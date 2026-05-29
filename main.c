@@ -178,16 +178,20 @@ int main(void) {
             if (iLocViewPos >= 0)    SetShaderValue(props.instancedShader, iLocViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
         }
 
-        int locUvScale      = GetShaderLocation(renderer.lightingShader, "uvScale");
-        int locUseNormalMap = GetShaderLocation(renderer.lightingShader, "useNormalMap");
+        int locUvScale       = GetShaderLocation(renderer.lightingShader, "uvScale");
+        int locUseNormalMap  = GetShaderLocation(renderer.lightingShader, "useNormalMap");
         int locUseMetalRough = GetShaderLocation(renderer.lightingShader, "useMetalRough");
+        int locUseParallax   = GetShaderLocation(renderer.lightingShader, "useParallax");
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
-        float useNormalScene = scene.floorHasNormalMap ? 1.0f : 0.0f;
-        float useMetalRoughOff = 0.0f;
-        if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
-        if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
-        if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+        float useNormalScene    = scene.floorHasNormalMap  ? 1.0f : 0.0f;
+        float useParallaxScene  = scene.floorHasHeightMap  ? 1.0f : 0.0f;
+        float useMetalRoughOff  = 0.0f;
+        float useParallaxOff    = 0.0f;
+        if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,     SHADER_UNIFORM_VEC2);
+        if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,   SHADER_UNIFORM_FLOAT);
+        if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
+        if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene, SHADER_UNIFORM_FLOAT);
 
         // Example to re-enable cursor: Press ESC to exit, or another key to toggle
         // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
@@ -210,11 +214,13 @@ int main(void) {
                 if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &charUvScale,       SHADER_UNIFORM_VEC2);
                 if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &charUseNormal,     SHADER_UNIFORM_FLOAT);
                 if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &charUseMetalRough, SHADER_UNIFORM_FLOAT);
+                if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxOff,    SHADER_UNIFORM_FLOAT);
                 DrawCharacter(character);
                 // Restore scene uniforms.
                 if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
                 if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
                 if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+                if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene,  SHADER_UNIFORM_FLOAT);
 
                 // Issue occlusion queries for in-range props against the now-rendered terrain depth
                 IssuePropOcclusionQueries(&props);

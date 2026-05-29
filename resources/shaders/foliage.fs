@@ -28,7 +28,7 @@ void main()
 
     // Screen-door LOD: discard up to 50% of pixels based on camera distance
     float dist   = length(worldPos - cameraPos);
-    float factor = clamp((dist - DITHER_START) / (DITHER_END - DITHER_START), 0.0, 0.9375);
+    float factor = clamp((dist - DITHER_START) / (DITHER_END - DITHER_START), 0.0, 0.8);
     if (factor > 0.0) {
         ivec2 sc = ivec2(gl_FragCoord.xy) % 4;
         float threshold = bayer[sc.y * 4 + sc.x] / 16.0;

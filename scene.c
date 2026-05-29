@@ -67,13 +67,13 @@ static float RidgeNoise2D(float x, float z, unsigned int seed, int octaves, floa
     return (norm > 0.0f) ? (sum / norm) : 0.0f;
 }
 
-static bool BuildNormalMapPath(const char* diffusePath, char* outPath, size_t outPathSize) {
+static bool BuildVariantPath(const char* diffusePath, const char* suffix, char* outPath, size_t outPathSize) {
     const char* extension = strrchr(diffusePath, '.');
     if (extension != NULL && extension != diffusePath) {
         size_t baseLength = (size_t)(extension - diffusePath);
-        return snprintf(outPath, outPathSize, "%.*s_n%s", (int)baseLength, diffusePath, extension) > 0;
+        return snprintf(outPath, outPathSize, "%.*s%s%s", (int)baseLength, diffusePath, suffix, extension) > 0;
     }
-    return snprintf(outPath, outPathSize, "%s_n", diffusePath) > 0;
+    return snprintf(outPath, outPathSize, "%s%s", diffusePath, suffix) > 0;
 }
 
 Scene InitScene(float width, float length, float height, float thickness, 
@@ -91,15 +91,30 @@ Scene InitScene(float width, float length, float height, float thickness,
     scene.floorTexture = LoadTexture(floorTexturePath);
     scene.floorNormalMap = (Texture2D){0};
     scene.floorHasNormalMap = false;
+    scene.floorHeightMap = (Texture2D){0};
+    scene.floorHasHeightMap = false;
 
     char floorNormalPath[512] = {0};
-    if (BuildNormalMapPath(floorTexturePath, floorNormalPath, sizeof(floorNormalPath))) {
+    if (BuildVariantPath(floorTexturePath, "_n", floorNormalPath, sizeof(floorNormalPath))) {
         scene.floorNormalMap = LoadTexture(floorNormalPath);
         if (scene.floorNormalMap.id > 0) {
             scene.floorHasNormalMap = true;
             printf("Floor normal map: %s (ID: %u)\n", floorNormalPath, scene.floorNormalMap.id);
         } else {
             printf("Floor normal map not found: %s\n", floorNormalPath);
+        }
+    }
+
+    char floorHeightPath[512] = {0};
+    if (BuildVariantPath(floorTexturePath, "_d", floorHeightPath, sizeof(floorHeightPath))) {
+        scene.floorHeightMap = LoadTexture(floorHeightPath);
+        if (scene.floorHeightMap.id > 0) {
+            scene.floorHasHeightMap = true;
+            SetTextureFilter(scene.floorHeightMap, MAIN_TEXTURE_FILTER_MODE);
+            SetTextureWrap(scene.floorHeightMap, TEXTURE_WRAP_REPEAT);
+            printf("Floor height map: %s (ID: %u)\n", floorHeightPath, scene.floorHeightMap.id);
+        } else {
+            printf("Floor height map not found: %s\n", floorHeightPath);
         }
     }
     
@@ -219,7 +234,8 @@ Scene InitScene(float width, float length, float height, float thickness,
     // Assign textures to models
     if (scene.floorTexture.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.floorTexture;
     else scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = GRAY; // Fallback color
-    if (scene.floorNormalMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture = scene.floorNormalMap;
+    if (scene.floorNormalMap.id > 0)  scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture    = scene.floorNormalMap;
+    if (scene.floorHeightMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_ROUGHNESS].texture = scene.floorHeightMap;
     
     // Assign lighting shader to all scene models' materials with safety checks
     if (scene.terrainModel.materialCount > 0) {
@@ -277,7 +293,8 @@ void UnloadScene(Scene scene) {
     // Unload textures
     if (scene.wallTexture.id > 0) UnloadTexture(scene.wallTexture);
     UnloadTexture(scene.floorTexture);
-    if (scene.floorNormalMap.id > 0) UnloadTexture(scene.floorNormalMap);
+    if (scene.floorNormalMap.id > 0)  UnloadTexture(scene.floorNormalMap);
+    if (scene.floorHeightMap.id > 0) UnloadTexture(scene.floorHeightMap);
     
     // Free allocated memory
     free(scene.wallBoxes);
