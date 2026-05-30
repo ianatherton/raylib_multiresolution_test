@@ -168,17 +168,25 @@ int main(void) {
         if (IsKeyDown(KEY_A)) { moveDX -= cy; moveDZ += sy; }
         if (IsKeyDown(KEY_D)) { moveDX += cy; moveDZ -= sy; }
 
+        bool shifting = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
         bool moving = (moveDX != 0.0f || moveDZ != 0.0f);
         if (moving) {
             float len = sqrtf(moveDX*moveDX + moveDZ*moveDZ);
             moveDX /= len;
             moveDZ /= len;
-            float moveSpeed = 4.0f;
+            float moveSpeed = shifting ? 4.0f * 1.6f : 4.0f;
             character.position.x += moveDX * moveSpeed * dt;
             character.position.z += moveDZ * moveSpeed * dt;
-            SetCharacterAnim(&character, CHAR_ANIM_WALK);
+            if (shifting) {
+                SetCharacterAnim(&character, CHAR_ANIM_RUN);
+                character.animFPS = 30.0f;
+            } else {
+                SetCharacterAnim(&character, CHAR_ANIM_WALK);
+                character.animFPS = 36.0f;
+            }
         } else {
             SetCharacterAnim(&character, CHAR_ANIM_IDLE);
+            character.animFPS = 30.0f;
         }
         character.yaw = camYaw + 180.0f; // face away from camera
         character.position.y = GetTerrainHeightAt(scene, character.position.x, character.position.z);
