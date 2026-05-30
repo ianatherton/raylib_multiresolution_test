@@ -4,47 +4,69 @@
 #include "common.h"
 #include "scene.h"
 
-// Prop types
 typedef enum {
-    PROP_BILLBOARD,  // 2D billboard (grass, etc.)
-    PROP_MODEL       // 3D model (rocks, etc.)
+    PROP_BILLBOARD,
+    PROP_MODEL
 } PropType;
 
-// Individual prop data
+typedef struct {
+    float x, y, z;
+    float yaw;
+    float pitch;
+    float speed;
+    float phase;
+    float maxLean;
+} GrassInstance;
+
 typedef struct {
     Vector3 position;
     bool visible;
     PropType type;
-    BoundingBox dummyBounds;       // CPU-side proxy volume for debug draw
+    BoundingBox dummyBounds;
     Vector3 dummyHalfExtents;
     bool isOccluder;
-    unsigned int occlusionQuery;   // GL query object (0 = not yet created)
-    bool queryPending;             // query issued last frame, result not yet read
-    bool lastQueryVisible;         // last GPU result: true = visible (default)
-    bool inRange;                  // passed distance cull this frame
+    unsigned int occlusionQuery;
+    bool queryPending;
+    bool lastQueryVisible;
+    bool inRange;
 } Prop;
 
-// Props collection
 typedef struct {
     Prop* props;
     int count;
+    int rockCount;
+
+    // Billboard (grass) instancing
+    GrassInstance* grassInstances;      // precomputed per-grass data, indexed [0..count-rockCount)
+    GrassInstance* grassVisibleScratch; // per-frame packed visible subset
+    unsigned int grassVAO;
+    unsigned int grassQuadVBO;
+    unsigned int grassInstanceVBO;
+    Shader grassShader;
+    int grassMvpLoc;
+    int grassTimeLoc;
+    int grassCamPosLoc;
+    int grassTexLoc;
+
     Texture2D billboardTexture;
     Rectangle billboardSourceRec;
     Vector2 billboardSize;
+
+    // Rock instancing
     Model model;
     bool rockHasNormalMap;
-    int visibleCount;
-    int renderedCount;
-    unsigned int proxyVBO;   // one vec3 center point per prop
+    Shader instancedShader;
+    Material* rockInstancedMaterials;
+    Matrix* rockTransformBuffer;
+
+    // Occlusion proxy
+    unsigned int proxyVBO;
     unsigned int proxyVAO;
     Shader proxyShader;
     int proxyMvpLoc;
-    Shader instancedShader;
-    Material* rockInstancedMaterials;  // clone of model.materials using instancedShader
-    Matrix* rockTransformBuffer;       // per-frame scratch for visible instance transforms
-    int rockCount;
-    Shader foliageShader;
-    int    foliageCamPosLoc;
+
+    int visibleCount;
+    int renderedCount;
 } Props;
 
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader);
@@ -52,16 +74,9 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
 void AddBillboardProp(Props* props, Vector3 position, int index);
 void AddModelProp(Props* props, Vector3 position, int index);
 
-// Upload all prop proxy positions to the GPU VBO. Call once after all props are added.
 void BuildProxyVBO(Props* props);
-
-// Read back pending occlusion query results (non-blocking). Call at start of each frame.
 void ReadPropOcclusionResults(Props* props);
-
-// Distance-cull then update prop visibility from last query result.
 void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera);
-
-// Issue per-prop occlusion queries in the full-res pass after scene geometry is drawn.
 void IssuePropOcclusionQueries(Props* props);
 
 bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin);

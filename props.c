@@ -1,6 +1,7 @@
 #include "props.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include "rlgl.h"
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
@@ -13,8 +14,6 @@ static BoundingBox BuildDummyBounds(Vector3 position, Vector3 halfExtents) {
     };
 }
 
-// Minimal pass-through shader for single-point proxy draws.
-// MVP is computed from the current rlgl modelview/projection matrices.
 static const char* PROXY_VS =
     "#version 330 core\n"
     "layout(location = 0) in vec3 vertexPosition;\n"
@@ -27,6 +26,36 @@ static const char* PROXY_FS =
     "#version 330 core\n"
     "out vec4 finalColor;\n"
     "void main() { finalColor = vec4(1.0); }\n";
+
+static float HashToUnitFloat(unsigned int x) {
+    x ^= x >> 16;
+    x *= 0x7feb352dU;
+    x ^= x >> 15;
+    x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return (float)(x & 0x00FFFFFFU) / 16777215.0f;
+}
+
+static void GrassFieldAngles(float x, float z, float* yaw, float* pitch) {
+    float nx = x * 0.026f + z * 0.014f;
+    float nz = z * 0.023f - x * 0.018f;
+    float a = sinf(nx) * 0.72f + sinf(nx * 0.47f + nz * 0.31f) * 0.28f;
+    float b = cosf(nz) * 0.68f + cosf(nx * 0.55f - nz * 0.42f) * 0.32f;
+    *yaw = (a * 0.92f + b * 0.55f) * PI;
+    float c = sinf(nz * 1.15f + nx * 0.74f) * 0.62f + cosf(nx * 1.08f) * 0.38f;
+    *pitch = c * (16.0f * DEG2RAD);
+}
+
+// Grass quad: two triangles, each vertex is (x, y, u, v).
+// Width = 1.0, height = 1.5 baked in.
+static const float GRASS_QUAD_VERTS[] = {
+    -0.5f, 0.0f,  0.0f, 1.0f,
+     0.5f, 0.0f,  1.0f, 1.0f,
+     0.5f, 1.5f,  1.0f, 0.0f,
+    -0.5f, 0.0f,  0.0f, 1.0f,
+     0.5f, 1.5f,  1.0f, 0.0f,
+    -0.5f, 1.5f,  0.0f, 0.0f,
+};
 
 Props InitProps(int billboardCount, int modelCount, const char* billboardTexturePath, const char* modelPath, const char* modelTexturePath, const char* modelNormalMapPath, Shader lightingShader) {
     Props props = {0};
@@ -45,8 +74,12 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
         props.props[i].isOccluder = false;
         props.props[i].occlusionQuery = 0;
         props.props[i].queryPending = false;
-        props.props[i].lastQueryVisible = true;  // show until first GPU result arrives
+        props.props[i].lastQueryVisible = true;
     }
+
+    // Grass precomputed instance data (indexed [0..billboardCount))
+    props.grassInstances      = (GrassInstance*)malloc(billboardCount * sizeof(GrassInstance));
+    props.grassVisibleScratch = (GrassInstance*)malloc(billboardCount * sizeof(GrassInstance));
 
     props.billboardTexture = LoadTexture(billboardTexturePath);
     if (props.billboardTexture.id == 0) {
@@ -58,6 +91,48 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     props.billboardSourceRec = (Rectangle){ 0.0f, 0.0f, (float)props.billboardTexture.width, (float)props.billboardTexture.height };
     props.billboardSize = (Vector2){ 1.0f, 1.5f };
 
+    // Grass instanced shader + VAO
+    props.grassShader = LoadShader("resources/shaders/foliage.vs", "resources/shaders/foliage.fs");
+    props.grassMvpLoc    = GetShaderLocation(props.grassShader, "mvp");
+    props.grassTimeLoc   = GetShaderLocation(props.grassShader, "time");
+    props.grassCamPosLoc = GetShaderLocation(props.grassShader, "cameraPos");
+    props.grassTexLoc    = GetShaderLocation(props.grassShader, "texture0");
+
+    glGenVertexArrays(1, &props.grassVAO);
+    glGenBuffers(1, &props.grassQuadVBO);
+    glGenBuffers(1, &props.grassInstanceVBO);
+
+    glBindVertexArray(props.grassVAO);
+
+    // Base quad VBO: vec2 pos + vec2 uv
+    glBindBuffer(GL_ARRAY_BUFFER, props.grassQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GRASS_QUAD_VERTS), GRASS_QUAD_VERTS, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    // Instance VBO: GrassInstance (pos xyz, yaw, pitch, speed, phase, maxLean)
+    glBindBuffer(GL_ARRAY_BUFFER, props.grassInstanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(billboardCount * sizeof(GrassInstance)), NULL, GL_DYNAMIC_DRAW);
+    size_t stride = sizeof(GrassInstance);
+    glVertexAttribPointer (2, 3, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, x));
+    glEnableVertexAttribArray(2); glVertexAttribDivisor(2, 1);
+    glVertexAttribPointer (3, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, yaw));
+    glEnableVertexAttribArray(3); glVertexAttribDivisor(3, 1);
+    glVertexAttribPointer (4, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, pitch));
+    glEnableVertexAttribArray(4); glVertexAttribDivisor(4, 1);
+    glVertexAttribPointer (5, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, speed));
+    glEnableVertexAttribArray(5); glVertexAttribDivisor(5, 1);
+    glVertexAttribPointer (6, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, phase));
+    glEnableVertexAttribArray(6); glVertexAttribDivisor(6, 1);
+    glVertexAttribPointer (7, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(GrassInstance, maxLean));
+    glEnableVertexAttribArray(7); glVertexAttribDivisor(7, 1);
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // Rock model
     props.model = LoadModel(modelPath);
     if (props.model.meshCount == 0) {
         printf("Failed to load rock model: %s\n", modelPath);
@@ -108,30 +183,23 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     }
     ApplyTextureFilterToAllMaterialMaps(props.model, PROPS_TEXTURE_FILTER_MODE);
 
-    // Instanced shader for rock batch draws (same fragment shader, instanced vertex shader)
     props.instancedShader = LoadShader(
         "resources/shaders/lighting_instanced.vs",
         "resources/shaders/lighting_rock.fs"
     );
-    props.instancedShader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] = 9;  // RL_DEFAULT_SHADER_ATTRIB_LOCATION_INSTANCE_TX
+    props.instancedShader.locs[SHADER_LOC_VERTEX_INSTANCE_TX] = 9;
     props.instancedShader.locs[SHADER_LOC_MAP_ALBEDO] = GetShaderLocation(props.instancedShader, "texture0");
     props.instancedShader.locs[SHADER_LOC_MAP_NORMAL] = GetShaderLocation(props.instancedShader, "texture1");
 
-    props.foliageShader    = LoadShader("resources/shaders/foliage.vs",
-                                        "resources/shaders/foliage.fs");
-    props.foliageCamPosLoc = GetShaderLocation(props.foliageShader, "cameraPos");
-
-    // Clone rock materials with the instanced shader so DrawMeshInstanced can use them
     props.rockInstancedMaterials = (Material*)malloc(props.model.materialCount * sizeof(Material));
     for (int i = 0; i < props.model.materialCount; i++) {
         props.rockInstancedMaterials[i] = props.model.materials[i];
         props.rockInstancedMaterials[i].shader = props.instancedShader;
     }
 
-    // Scratch buffer for per-frame visible instance transforms (worst case: all rocks visible)
     props.rockTransformBuffer = (Matrix*)malloc(modelCount * sizeof(Matrix));
 
-    // Proxy occlusion shader and GPU objects
+    // Occlusion proxy
     props.proxyShader = LoadShaderFromMemory(PROXY_VS, PROXY_FS);
     props.proxyMvpLoc = GetShaderLocation(props.proxyShader, "mvp");
 
@@ -139,7 +207,6 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     glGenBuffers(1, &props.proxyVBO);
     glBindVertexArray(props.proxyVAO);
     glBindBuffer(GL_ARRAY_BUFFER, props.proxyVBO);
-    // Allocate VBO for totalCount vec3 positions; filled later by BuildProxyVBO
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(totalCount * sizeof(Vector3)), NULL, GL_DYNAMIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vector3), (void*)0);
     glEnableVertexAttribArray(0);
@@ -153,31 +220,42 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
 }
 
 void AddBillboardProp(Props* props, Vector3 position, int index) {
-    if (index >= 0 && index < props->count) {
-        props->props[index].position = position;
-        props->props[index].type = PROP_BILLBOARD;
-        props->props[index].dummyHalfExtents = (Vector3){0.20f, 0.75f, 0.20f};
-        props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
-        props->props[index].isOccluder = false;
-        props->props[index].visible = true;
-    }
+    if (index < 0 || index >= props->count) return;
+    props->props[index].position = position;
+    props->props[index].type = PROP_BILLBOARD;
+    props->props[index].dummyHalfExtents = (Vector3){0.20f, 0.75f, 0.20f};
+    props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
+    props->props[index].isOccluder = false;
+    props->props[index].visible = true;
+
+    // Precompute per-blade data (called once at spawn, not every frame)
+    float yaw, pitch;
+    GrassFieldAngles(position.x, position.z, &yaw, &pitch);
+    float randA = HashToUnitFloat((unsigned int)(index * 9781 + 17));
+    float randB = HashToUnitFloat((unsigned int)(index * 6271 + 53));
+    props->grassInstances[index].x        = position.x;
+    props->grassInstances[index].y        = position.y;
+    props->grassInstances[index].z        = position.z;
+    props->grassInstances[index].yaw      = yaw;
+    props->grassInstances[index].pitch    = pitch;
+    props->grassInstances[index].speed    = 0.8f + randA * 1.6f;
+    props->grassInstances[index].phase    = randB * PI * 2.0f;
+    props->grassInstances[index].maxLean  = (5.0f + randA * 11.0f) * DEG2RAD;
 }
 
 void AddModelProp(Props* props, Vector3 position, int index) {
-    if (index >= 0 && index < props->count) {
-        props->props[index].position = position;
-        props->props[index].type = PROP_MODEL;
-        props->props[index].dummyHalfExtents = (Vector3){0.45f, 0.55f, 0.45f};
-        props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
-        props->props[index].isOccluder = true;
-        props->props[index].visible = true;
-    }
+    if (index < 0 || index >= props->count) return;
+    props->props[index].position = position;
+    props->props[index].type = PROP_MODEL;
+    props->props[index].dummyHalfExtents = (Vector3){0.45f, 0.55f, 0.45f};
+    props->props[index].dummyBounds = BuildDummyBounds(position, props->props[index].dummyHalfExtents);
+    props->props[index].isOccluder = true;
+    props->props[index].visible = true;
 }
 
 void BuildProxyVBO(Props* props) {
     Vector3* positions = (Vector3*)malloc(props->count * sizeof(Vector3));
     for (int i = 0; i < props->count; i++) {
-        // Use the vertical center of the proxy volume as the test point
         positions[i] = (Vector3){
             props->props[i].position.x,
             props->props[i].position.y + props->props[i].dummyHalfExtents.y,
@@ -195,7 +273,7 @@ void ReadPropOcclusionResults(Props* props) {
         if (!props->props[i].queryPending) continue;
         GLuint available = 0;
         glGetQueryObjectuiv(props->props[i].occlusionQuery, GL_QUERY_RESULT_AVAILABLE, &available);
-        if (!available) continue;  // don't stall; keep last result for this frame
+        if (!available) continue;
         GLuint result = 0;
         glGetQueryObjectuiv(props->props[i].occlusionQuery, GL_QUERY_RESULT, &result);
         props->props[i].lastQueryVisible = (result > 0);
@@ -219,7 +297,6 @@ void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
             continue;
         }
 
-        // In range: trust the last GPU occlusion result (true by default until first query)
         props->props[i].inRange = true;
         props->props[i].visible = props->props[i].lastQueryVisible;
         visibleCount++;
@@ -228,12 +305,7 @@ void UpdatePropVisibility(Props* props, Scene scene, Camera3D camera) {
     props->visibleCount = visibleCount;
 }
 
-// Called inside BeginMode3D in the full-res pass, after all scene geometry has been drawn.
-// Flushes the rlgl batch so terrain is in the depth buffer, then issues one GL_POINTS draw
-// per in-range prop wrapped in a conservative occlusion query.  Color writes and depth writes
-// are both disabled so proxies are invisible and don't disturb the depth buffer.
 void IssuePropOcclusionQueries(Props* props) {
-    // Flush rlgl batch so terrain/scene depth is committed before our queries
     rlDrawRenderBatchActive();
 
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -247,8 +319,8 @@ void IssuePropOcclusionQueries(Props* props) {
     glBindVertexArray(props->proxyVAO);
 
     for (int i = 0; i < props->count; i++) {
-        if (!props->props[i].inRange) continue;     // distance-culled; skip
-        if (props->props[i].queryPending) continue; // last query not yet consumed; reuse result
+        if (!props->props[i].inRange) continue;
+        if (props->props[i].queryPending) continue;
 
         if (props->props[i].occlusionQuery == 0) {
             glGenQueries(1, &props->props[i].occlusionQuery);
@@ -261,8 +333,6 @@ void IssuePropOcclusionQueries(Props* props) {
     }
 
     glBindVertexArray(0);
-
-    // Restore GL state so subsequent rlgl draws are unaffected
     glUseProgram(rlGetShaderIdDefault());
     glDepthMask(GL_TRUE);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -286,102 +356,29 @@ bool IsPointInFrustum(Vector3 point, Camera3D camera, float margin) {
            (fabsf(viewSpacePoint.y) < nearPlaneHeight * 0.5f);
 }
 
-typedef struct {
-    int index;
-    float distance;
-} BillboardDepthInfo;
-
-int CompareBillboardDepth(const void* a, const void* b) {
-    BillboardDepthInfo* billboardA = (BillboardDepthInfo*)a;
-    BillboardDepthInfo* billboardB = (BillboardDepthInfo*)b;
-    if (billboardA->distance > billboardB->distance) return -1;
-    if (billboardA->distance < billboardB->distance) return 1;
-    return 0;
-}
-
-static float HashToUnitFloat(unsigned int x) {
-    x ^= x >> 16;
-    x *= 0x7feb352dU;
-    x ^= x >> 15;
-    x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return (float)(x & 0x00FFFFFFU) / 16777215.0f;
-}
-
-static void GrassFieldAngles(float x, float z, float* yaw, float* pitch) {
-    float nx = x * 0.026f + z * 0.014f;
-    float nz = z * 0.023f - x * 0.018f;
-    float a = sinf(nx) * 0.72f + sinf(nx * 0.47f + nz * 0.31f) * 0.28f;
-    float b = cosf(nz) * 0.68f + cosf(nx * 0.55f - nz * 0.42f) * 0.32f;
-    *yaw = (a * 0.92f + b * 0.55f) * PI;
-    float c = sinf(nz * 1.15f + nx * 0.74f) * 0.62f + cosf(nx * 1.08f) * 0.38f;
-    *pitch = c * (16.0f * DEG2RAD);
-}
-
-static void DrawGrassTexturedPlane(Vector3 baseCenter, Texture2D tex, Rectangle source, Vector2 size, float yaw, float pitch, float leanAx, float leanAz, Color tint) {
-    float w = size.x;
-    float h = size.y;
-    Vector3 bl = {-w * 0.5f, 0.0f, 0.0f};
-    Vector3 br = {w * 0.5f, 0.0f, 0.0f};
-    Vector3 tr = {w * 0.5f, h, 0.0f};
-    Vector3 tl = {-w * 0.5f, h, 0.0f};
-    Matrix spatial = MatrixMultiply(MatrixRotateX(pitch), MatrixRotateY(yaw));
-    Matrix lean = MatrixMultiply(MatrixRotateZ(leanAz), MatrixRotateX(leanAx));
-    Matrix orient = MatrixMultiply(lean, spatial);
-    bl = Vector3Add(baseCenter, Vector3Transform(bl, orient));
-    br = Vector3Add(baseCenter, Vector3Transform(br, orient));
-    tr = Vector3Add(baseCenter, Vector3Transform(tr, orient));
-    tl = Vector3Add(baseCenter, Vector3Transform(tl, orient));
-    float tw = (float)tex.width;
-    float th = (float)tex.height;
-    Vector2 uv0 = {source.x / tw, (source.y + source.height) / th};
-    Vector2 uv1 = {(source.x + source.width) / tw, (source.y + source.height) / th};
-    Vector2 uv2 = {(source.x + source.width) / tw, source.y / th};
-    Vector2 uv3 = {source.x / tw, source.y / th};
-    rlSetTexture(tex.id);
-    rlBegin(RL_QUADS);
-    rlColor4ub(tint.r, tint.g, tint.b, tint.a);
-    rlTexCoord2f(uv0.x, uv0.y); rlVertex3f(bl.x, bl.y, bl.z);
-    rlTexCoord2f(uv1.x, uv1.y); rlVertex3f(br.x, br.y, br.z);
-    rlTexCoord2f(uv2.x, uv2.y); rlVertex3f(tr.x, tr.y, tr.z);
-    rlTexCoord2f(uv3.x, uv3.y); rlVertex3f(tl.x, tl.y, tl.z);
-    rlTexCoord2f(uv0.x, uv0.y); rlVertex3f(bl.x, bl.y, bl.z);
-    rlTexCoord2f(uv3.x, uv3.y); rlVertex3f(tl.x, tl.y, tl.z);
-    rlTexCoord2f(uv2.x, uv2.y); rlVertex3f(tr.x, tr.y, tr.z);
-    rlTexCoord2f(uv1.x, uv1.y); rlVertex3f(br.x, br.y, br.z);
-    rlEnd();
-    rlSetTexture(0);
-}
-
 void DrawProps(Props* props, Camera3D camera) {
     props->renderedCount = 0;
 
-    BillboardDepthInfo* visibleBillboards = (BillboardDepthInfo*)malloc(props->count * sizeof(BillboardDepthInfo));
-    int billboardCount = 0;
+    // --- Rocks: instanced draw ---
     int instanceCount = 0;
     Matrix baseTransform = props->model.transform;
+    int billboardCount = props->count - props->rockCount;
 
-    for (int i = 0; i < props->count; i++) {
+    for (int i = billboardCount; i < props->count; i++) {
         if (!props->props[i].visible) continue;
         if (!IsPointInFrustum(props->props[i].position, camera, 1.0f)) continue;
 
         props->renderedCount++;
-
-        if (props->props[i].type == PROP_BILLBOARD) {
-            visibleBillboards[billboardCount].index = i;
-            visibleBillboards[billboardCount].distance = Vector3Distance(camera.position, props->props[i].position);
-            billboardCount++;
-        } else if (props->props[i].type == PROP_MODEL) {
-            float modelScaleRand = HashToUnitFloat((unsigned int)(i * 7919 + 101));
-            float scale = 0.38f + modelScaleRand * 0.34f;
-            float rotationAngle = (float)((i * 37) % 360);
-            Vector3 pos = props->props[i].position;
-            Matrix t = MatrixMultiply(
-                MatrixMultiply(MatrixScale(scale, scale, scale), MatrixRotateY(rotationAngle * DEG2RAD)),
-                MatrixTranslate(pos.x, pos.y, pos.z)
-            );
-            props->rockTransformBuffer[instanceCount++] = MatrixMultiply(baseTransform, t);
-        }
+        int ri = i - billboardCount;
+        float modelScaleRand = HashToUnitFloat((unsigned int)(ri * 7919 + 101));
+        float scale = 0.38f + modelScaleRand * 0.34f;
+        float rotationAngle = (float)((ri * 37) % 360);
+        Vector3 pos = props->props[i].position;
+        Matrix t = MatrixMultiply(
+            MatrixMultiply(MatrixScale(scale, scale, scale), MatrixRotateY(rotationAngle * DEG2RAD)),
+            MatrixTranslate(pos.x, pos.y, pos.z)
+        );
+        props->rockTransformBuffer[instanceCount++] = MatrixMultiply(baseTransform, t);
     }
 
     if (instanceCount > 0) {
@@ -394,30 +391,43 @@ void DrawProps(Props* props, Camera3D camera) {
         }
     }
 
-    if (billboardCount > 0) {
-        qsort(visibleBillboards, billboardCount, sizeof(BillboardDepthInfo), CompareBillboardDepth);
+    // --- Grass: instanced GPU draw ---
+    // Flush rlgl so rocks are in depth buffer before we do raw GL
+    rlDrawRenderBatchActive();
 
-        float t = (float)GetTime();
-        BeginShaderMode(props->foliageShader);
-        SetShaderValue(props->foliageShader, props->foliageCamPosLoc, &camera.position, SHADER_UNIFORM_VEC3);
-        for (int i = 0; i < billboardCount; i++) {
-            int index = visibleBillboards[i].index;
-            Vector3 p = props->props[index].position;
-            float yaw = 0.0f, pitch = 0.0f;
-            GrassFieldAngles(p.x, p.z, &yaw, &pitch);
-            float randA = HashToUnitFloat((unsigned int)(index * 9781 + 17));
-            float randB = HashToUnitFloat((unsigned int)(index * 6271 + 53));
-            float speed = 0.8f + randA * 1.6f;
-            float phase = randB * PI * 2.0f;
-            float maxLeanRad = (5.0f + randA * 11.0f) * DEG2RAD;
-            float leanAx = sinf(t * speed + phase) * maxLeanRad;
-            float leanAz = cosf(t * (speed * 0.73f) + phase * 1.37f) * maxLeanRad * 0.48f;
-            DrawGrassTexturedPlane(p, props->billboardTexture, props->billboardSourceRec, props->billboardSize, yaw, pitch, leanAx, leanAz, WHITE);
-        }
-        EndShaderMode();
+    int grassVisible = 0;
+    for (int i = 0; i < billboardCount; i++) {
+        if (!props->props[i].visible) continue;
+        props->grassVisibleScratch[grassVisible++] = props->grassInstances[i];
     }
+    props->renderedCount += grassVisible;
 
-    free(visibleBillboards);
+    if (grassVisible > 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, props->grassInstanceVBO);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(grassVisible * sizeof(GrassInstance)), props->grassVisibleScratch);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+        Matrix mvp = MatrixMultiply(rlGetMatrixModelview(), rlGetMatrixProjection());
+        float t = fmodf((float)GetTime(), 3600.0f);
+
+        glUseProgram(props->grassShader.id);
+        rlSetUniformMatrix(props->grassMvpLoc, mvp);
+        glUniform1f(props->grassTimeLoc, t);
+        glUniform3f(props->grassCamPosLoc, camera.position.x, camera.position.y, camera.position.z);
+        glUniform1i(props->grassTexLoc, 0);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, props->billboardTexture.id);
+
+        rlDisableBackfaceCulling();
+        glBindVertexArray(props->grassVAO);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, grassVisible);
+        glBindVertexArray(0);
+        rlEnableBackfaceCulling();
+
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glUseProgram(rlGetShaderIdDefault());
+    }
 }
 
 void DrawPropsDebug(Props* props, Camera3D camera) {
@@ -442,7 +452,6 @@ void DrawPropsDebug(Props* props, Camera3D camera) {
 }
 
 void UnloadProps(Props* props) {
-    // Delete per-prop occlusion query objects
     for (int i = 0; i < props->count; i++) {
         if (props->props[i].occlusionQuery != 0) {
             glDeleteQueries(1, &props->props[i].occlusionQuery);
@@ -453,10 +462,16 @@ void UnloadProps(Props* props) {
     glDeleteBuffers(1, &props->proxyVBO);
     UnloadShader(props->proxyShader);
 
+    glDeleteVertexArrays(1, &props->grassVAO);
+    glDeleteBuffers(1, &props->grassQuadVBO);
+    glDeleteBuffers(1, &props->grassInstanceVBO);
+    UnloadShader(props->grassShader);
+    free(props->grassInstances);
+    free(props->grassVisibleScratch);
+
     free(props->rockTransformBuffer);
     free(props->rockInstancedMaterials);
     UnloadShader(props->instancedShader);
-    UnloadShader(props->foliageShader);
 
     UnloadTexture(props->billboardTexture);
     UnloadModel(props->model);

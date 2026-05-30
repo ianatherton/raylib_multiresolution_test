@@ -10,10 +10,6 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 720
 
-// DOF in world meters from camera: no blur at or below DOF_SHARP_RADIUS_M; full blur by DOF_BLUR_FULL_DIST_M
-#define DOF_SHARP_RADIUS_M 4.0f
-#define DOF_BLUR_FULL_DIST_M 55.0f
-#define DOF_GAUSSIAN_PIXEL_SCALE 0.01f // wider separable blur before distance mix
 // Texture filter modes:
 // TEXTURE_FILTER_POINT - Nearest-neighbor filtering (pixelated)
 // TEXTURE_FILTER_BILINEAR - Linear filtering (smooth)

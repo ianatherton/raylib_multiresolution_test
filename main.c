@@ -4,37 +4,28 @@
 #include "renderer.h"
 #include "lighting.h"
 #include "character.h"
-#include <stdlib.h> // For rand() and srand()
-#include <time.h>   // For time()
+#include <stdlib.h>
+#include <time.h>
 
 int main(void) {
-    // Create a single point light above the scene
     Light light = {
         .position = (Vector3){0.0f, 6.0f, 0.0f},
         .color = WHITE,
         .intensity = 1.0f
     };
 
-    // Initialization
-
-    // Initialization
-    //--------------------------------------------------------------------------------------
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Raylib First Person Demo");
     SetTextureFilter(GetFontDefault().texture, MAIN_TEXTURE_FILTER_MODE);
 
-    // Initialize game state
     GameState gameState = {0};
-    
-    // Define the camera to look into our 3D world
-    gameState.camera.position = (Vector3){ 0.0f, 2.0f, 4.0f };    // Camera position
-    gameState.camera.target = (Vector3){ 0.0f, 1.8f, 0.0f };      // Camera looking at point
-    gameState.camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };          // Camera up vector (rotation towards target)
-    gameState.camera.fovy = 60.0f;                                // Camera field-of-view Y
-    gameState.camera.projection = CAMERA_PERSPECTIVE;             // Camera mode type
-    gameState.showDebugBoxes = false;                             // Debug visualization flag
+    gameState.camera.position   = (Vector3){ 0.0f, 2.0f, 4.0f };
+    gameState.camera.target     = (Vector3){ 0.0f, 1.8f, 0.0f };
+    gameState.camera.up         = (Vector3){ 0.0f, 1.0f, 0.0f };
+    gameState.camera.fovy       = 60.0f;
+    gameState.camera.projection = CAMERA_PERSPECTIVE;
+    gameState.showDebugBoxes    = false;
 
-    // Initialize renderer
-    Renderer renderer = InitRenderer(SCREEN_WIDTH, SCREEN_HEIGHT);
+    Renderer renderer = InitRenderer();
     InitSkybox(
         &renderer,
         "raw-assets/skybox_clear/sky_105_cubemap_2k/px.png",
@@ -46,29 +37,24 @@ int main(void) {
     );
     InitSkyCloudDome(&renderer, "raw-assets/tiling_sky_clouds01.png");
 
-    // Define level geometry (walls, floor)
     float roomWidth = 500.0f;
     float roomLength = 500.0f;
     float wallHeight = 8.0f;
     float wallThickness = 0.2f;
 
-    // Initialize scene
     unsigned int terrainSeed = (unsigned int)time(NULL);
-    Scene scene = InitScene(roomWidth, roomLength, wallHeight, wallThickness, 
-                           "raw-assets/tiling_dungeon_brickwall01.png", 
+    Scene scene = InitScene(roomWidth, roomLength, wallHeight, wallThickness,
+                           "raw-assets/tiling_dungeon_brickwall01.png",
                            "raw-assets/tiling_dungeon_floor01.png",
                            renderer.lightingShader,
                            terrainSeed);
 
-    // Define number of props to create
-    const int numGrassProps = 200000;  // 10800 grass billboards (72x original 150)
-    const int numRockProps = 40000;    // 3600 rock models (72x original 50)
-    const int totalProps = numGrassProps + numRockProps;
-    
-    // Initialize random number generator
+    const int numGrassProps = 200000;
+    const int numRockProps  = 40000;
+    const int totalProps    = numGrassProps + numRockProps;
+
     srand(time(NULL));
-    
-    // Initialize props with both grass and rock assets
+
     Props props = InitProps(
         numGrassProps,
         numRockProps,
@@ -78,88 +64,82 @@ int main(void) {
         "raw-assets/tilingrock02_n.png",
         renderer.lightingShader
     );
-    
-    // Calculate usable room area (slightly inside the walls)
+
     float marginFromWall = 1.0f;
     float minX = -roomWidth/2 + marginFromWall;
-    float maxX = roomWidth/2 - marginFromWall;
+    float maxX =  roomWidth/2 - marginFromWall;
     float minZ = -roomLength/2 + marginFromWall;
-    float maxZ = roomLength/2 - marginFromWall;
-    
-    // Add grass props with random positions
+    float maxZ =  roomLength/2 - marginFromWall;
+
     for (int i = 0; i < numGrassProps; i++) {
-        // Generate random position within room bounds
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
-        
-        // Create grass prop slightly above floor
         float terrainY = GetTerrainHeightAt(scene, x, z);
-        Vector3 position = (Vector3){ x, terrainY + 0.05f, z };
-        AddBillboardProp(&props, position, i);
+        AddBillboardProp(&props, (Vector3){ x, terrainY + 0.05f, z }, i);
     }
-    
-    // Add rock props with random positions
+
     for (int i = 0; i < numRockProps; i++) {
-        // Generate random position within room bounds
         float x = minX + ((float)rand() / RAND_MAX) * (maxX - minX);
         float z = minZ + ((float)rand() / RAND_MAX) * (maxZ - minZ);
-        
         float terrainY = GetTerrainHeightAt(scene, x, z);
-        Vector3 position = (Vector3){ x, terrainY + PROPS_ROCK_Y_OFFSET, z };
-        AddModelProp(&props, position, numGrassProps + i);
+        AddModelProp(&props, (Vector3){ x, terrainY + PROPS_ROCK_Y_OFFSET, z }, numGrassProps + i);
     }
-    
-    // Print prop counts
+
     printf("Created %d grass props and %d rock props (total: %d)\n",
            numGrassProps, numRockProps, totalProps);
 
-    // Upload all prop proxy positions to GPU once
     BuildProxyVBO(&props);
 
-    // Initialize character
+    // Cache shader uniform locations once (not per frame)
+    int locLightPos      = GetShaderLocation(renderer.lightingShader, "lightPos");
+    int locLightColor    = GetShaderLocation(renderer.lightingShader, "lightColor");
+    int locViewPos       = GetShaderLocation(renderer.lightingShader, "viewPos");
+    int locUvScale       = GetShaderLocation(renderer.lightingShader, "uvScale");
+    int locUseNormalMap  = GetShaderLocation(renderer.lightingShader, "useNormalMap");
+    int locUseMetalRough = GetShaderLocation(renderer.lightingShader, "useMetalRough");
+    int locUseParallax   = GetShaderLocation(renderer.lightingShader, "useParallax");
+    int locParallaxScale = GetShaderLocation(renderer.lightingShader, "parallaxScale");
+
+    int iLocLightPos      = GetShaderLocation(props.instancedShader, "lightPos");
+    int iLocLightColor    = GetShaderLocation(props.instancedShader, "lightColor");
+    int iLocViewPos       = GetShaderLocation(props.instancedShader, "viewPos");
+    int iLocUvScale       = GetShaderLocation(props.instancedShader, "uvScale");
+    int iLocUseNormalMap  = GetShaderLocation(props.instancedShader, "useNormalMap");
+    int iLocUseMetalRough = GetShaderLocation(props.instancedShader, "useMetalRough");
+
     Character character = InitCharacter(renderer.lightingShader);
     float charX = 0.0f, charZ = -5.0f;
     character.position = (Vector3){ charX, GetTerrainHeightAt(scene, charX, charZ), charZ };
     character.yaw = 0.0f;
 
-    DisableCursor(); // Hide cursor for FPS controls
+    DisableCursor();
 
-    // Parallax scale levels: 1=off, 2-5 increasing intensity
     static const float parallaxLevels[5] = { 0.0f, 0.02f, 0.06f, 0.12f, 0.24f };
-    float parallaxScale = parallaxLevels[2]; // start at default
+    float parallaxScale = parallaxLevels[2];
 
-    // Third-person orbit camera state
-    float camYaw   = 0.0f;   // horizontal orbit angle (degrees)
-    float camPitch = 20.0f;  // vertical elevation angle (degrees)
-    float camDist  = 5.0f;   // orbit radius (world units)
+    float camYaw   = 0.0f;
+    float camPitch = 20.0f;
+    float camDist  = 5.0f;
 
-    SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
-    //--------------------------------------------------------------------------------------
+    SetTargetFPS(60);
 
-    // Main game loop
-    while (!WindowShouldClose()) {   // Detect window close button or ESC key
-        // Update
-        //----------------------------------------------------------------------------------
-        ReadPropOcclusionResults(&props);  // non-blocking; reads last frame's GPU query results
+    while (!WindowShouldClose()) {
+        ReadPropOcclusionResults(&props);
         float dt = GetFrameTime();
 
-        // Toggle debug visualization with F1 key
         if (IsKeyPressed(KEY_F1)) gameState.showDebugBoxes = !gameState.showDebugBoxes;
 
-        // Parallax level keys 1-5
         if (IsKeyPressed(KEY_ONE))   parallaxScale = parallaxLevels[0];
         if (IsKeyPressed(KEY_TWO))   parallaxScale = parallaxLevels[1];
         if (IsKeyPressed(KEY_THREE)) parallaxScale = parallaxLevels[2];
         if (IsKeyPressed(KEY_FOUR))  parallaxScale = parallaxLevels[3];
         if (IsKeyPressed(KEY_FIVE))  parallaxScale = parallaxLevels[4];
 
-        // Orbit camera: mouse drag rotates around character
         Vector2 mouseDelta = GetMouseDelta();
         camYaw   -= mouseDelta.x * 0.2f;
         camPitch += mouseDelta.y * 0.2f;
         camPitch  = Clamp(camPitch, 5.0f, 75.0f);
 
-        // WASD: move character in the camera's horizontal plane
         float sy = sinf(camYaw * DEG2RAD);
         float cy = cosf(camYaw * DEG2RAD);
         float moveDX = 0.0f, moveDZ = 0.0f;
@@ -188,10 +168,9 @@ int main(void) {
             SetCharacterAnim(&character, CHAR_ANIM_IDLE);
             character.animFPS = 30.0f;
         }
-        character.yaw = camYaw + 180.0f; // face away from camera
+        character.yaw = camYaw + 180.0f;
         character.position.y = GetTerrainHeightAt(scene, character.position.x, character.position.z);
 
-        // Build orbit camera from updated character position
         Vector3 charFocus = { character.position.x, character.position.y + 1.4f, character.position.z };
         float cp = cosf(camPitch * DEG2RAD);
         float sp = sinf(camPitch * DEG2RAD);
@@ -202,127 +181,102 @@ int main(void) {
             charFocus.z + cy * cp * camDist
         };
 
-        // Update character
         UpdateCharacter(&character, dt);
-
-        // Update prop visibility based on line of sight
         UpdatePropVisibility(&props, scene, gameState.camera);
 
-        // Light follows player
         light.position = (Vector3){ character.position.x, character.position.y + 6.0f, character.position.z };
-
-        // Update light position in renderer
         renderer.lightPosition = light.position;
-        
-        // Update lighting uniforms
-        int locLightPos = GetShaderLocation(renderer.lightingShader, "lightPos");
-        int locLightColor = GetShaderLocation(renderer.lightingShader, "lightColor");
-        int locViewPos = GetShaderLocation(renderer.lightingShader, "viewPos");
-        
-        if (locLightPos >= 0 && locLightColor >= 0 && locViewPos >= 0) {
-            Vector3 lightPos = light.position;
-            Vector3 viewPos = gameState.camera.position;
-            Vector3 lightColor = ColorToVec3(light.color);
-            SetShaderValue(renderer.lightingShader, locLightPos, &lightPos, SHADER_UNIFORM_VEC3);
-            SetShaderValue(renderer.lightingShader, locLightColor, &lightColor, SHADER_UNIFORM_VEC3);
-            SetShaderValue(renderer.lightingShader, locViewPos, &viewPos, SHADER_UNIFORM_VEC3);
 
-            int iLocLightPos   = GetShaderLocation(props.instancedShader, "lightPos");
-            int iLocLightColor = GetShaderLocation(props.instancedShader, "lightColor");
-            int iLocViewPos    = GetShaderLocation(props.instancedShader, "viewPos");
-            if (iLocLightPos >= 0)   SetShaderValue(props.instancedShader, iLocLightPos,   &lightPos,   SHADER_UNIFORM_VEC3);
-            if (iLocLightColor >= 0) SetShaderValue(props.instancedShader, iLocLightColor, &lightColor, SHADER_UNIFORM_VEC3);
-            if (iLocViewPos >= 0)    SetShaderValue(props.instancedShader, iLocViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
-        }
+        // Update lighting uniforms (cached locs, no string lookup)
+        Vector3 lightPos   = light.position;
+        Vector3 viewPos    = gameState.camera.position;
+        Vector3 lightColor = ColorToVec3(light.color);
 
-        int locUvScale         = GetShaderLocation(renderer.lightingShader, "uvScale");
-        int locUseNormalMap    = GetShaderLocation(renderer.lightingShader, "useNormalMap");
-        int locUseMetalRough   = GetShaderLocation(renderer.lightingShader, "useMetalRough");
-        int locUseParallax     = GetShaderLocation(renderer.lightingShader, "useParallax");
-        int locParallaxScale   = GetShaderLocation(renderer.lightingShader, "parallaxScale");
+        if (locLightPos >= 0)   SetShaderValue(renderer.lightingShader, locLightPos,   &lightPos,   SHADER_UNIFORM_VEC3);
+        if (locLightColor >= 0) SetShaderValue(renderer.lightingShader, locLightColor, &lightColor, SHADER_UNIFORM_VEC3);
+        if (locViewPos >= 0)    SetShaderValue(renderer.lightingShader, locViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
+
+        if (iLocLightPos >= 0)   SetShaderValue(props.instancedShader, iLocLightPos,   &lightPos,   SHADER_UNIFORM_VEC3);
+        if (iLocLightColor >= 0) SetShaderValue(props.instancedShader, iLocLightColor, &lightColor, SHADER_UNIFORM_VEC3);
+        if (iLocViewPos >= 0)    SetShaderValue(props.instancedShader, iLocViewPos,    &viewPos,    SHADER_UNIFORM_VEC3);
+
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
-        float useNormalScene    = scene.floorHasNormalMap  ? 1.0f : 0.0f;
-        float useParallaxScene  = (scene.floorHasHeightMap && parallaxScale > 0.0f) ? 1.0f : 0.0f;
-        float useMetalRoughOff  = 0.0f;
-        float useParallaxOff    = 0.0f;
+        float useNormalScene   = scene.floorHasNormalMap ? 1.0f : 0.0f;
+        float useParallaxScene = (scene.floorHasHeightMap && parallaxScale > 0.0f) ? 1.0f : 0.0f;
+        float useMetalRoughOff = 0.0f;
+        float useParallaxOff   = 0.0f;
+
         if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,     SHADER_UNIFORM_VEC2);
         if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,   SHADER_UNIFORM_FLOAT);
         if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
         if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene, SHADER_UNIFORM_FLOAT);
         if (locParallaxScale >= 0) SetShaderValue(renderer.lightingShader, locParallaxScale, &parallaxScale,    SHADER_UNIFORM_FLOAT);
 
-        // Example to re-enable cursor: Press ESC to exit, or another key to toggle
-        // if (IsKeyPressed(KEY_ESCAPE)) EnableCursor();
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
 
-        //----------------------------------------------------------------------------------
-        // Draw
-        //----------------------------------------------------------------------------------
-        // 1. Draw full-resolution environment (walls, floor) to fullResTarget
-        BeginFullResRender(renderer);
-            BeginMode3D(gameState.camera);
-                DrawSkybox(renderer, gameState.camera);
-                DrawSkyCloudDome(renderer, gameState.camera);
-                // Draw scene
-                DrawScene(scene);
+        BeginMode3D(gameState.camera);
+            DrawSkybox(renderer, gameState.camera);
+            DrawSkyCloudDome(renderer, gameState.camera);
+            DrawScene(scene);
 
-                // Draw character with its own normal/metallic/roughness maps.
-                float charUseNormal    = character.hasNormalMap  ? 1.0f : 0.0f;
-                float charUseMetalRough = character.hasMetalRough ? 1.0f : 0.0f;
-                Vector2 charUvScale = {1.0f, 1.0f};
-                if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &charUvScale,       SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &charUseNormal,     SHADER_UNIFORM_FLOAT);
-                if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &charUseMetalRough, SHADER_UNIFORM_FLOAT);
-                if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxOff,    SHADER_UNIFORM_FLOAT);
-                DrawCharacter(character);
-                // Restore scene uniforms.
-                if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
-                if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
-                if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene,  SHADER_UNIFORM_FLOAT);
+            // Character (overrides uvScale/normalMap/parallax for its own maps)
+            float charUseNormal     = character.hasNormalMap  ? 1.0f : 0.0f;
+            float charUseMetalRough = character.hasMetalRough ? 1.0f : 0.0f;
+            Vector2 charUvScale = {1.0f, 1.0f};
+            if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &charUvScale,       SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &charUseNormal,     SHADER_UNIFORM_FLOAT);
+            if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &charUseMetalRough, SHADER_UNIFORM_FLOAT);
+            if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxOff,    SHADER_UNIFORM_FLOAT);
+            DrawCharacter(character);
 
-                // Issue occlusion queries for in-range props against the now-rendered terrain depth
-                IssuePropOcclusionQueries(&props);
+            // Restore scene uniforms before issuing occlusion queries
+            if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
+            if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+            if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene,  SHADER_UNIFORM_FLOAT);
 
-                // Draw props at full resolution
-                float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
-                if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleRocks,   SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
-                {
-                    int iLocUvScale       = GetShaderLocation(props.instancedShader, "uvScale");
-                    int iLocUseNormalMap  = GetShaderLocation(props.instancedShader, "useNormalMap");
-                    int iLocUseMetalRough = GetShaderLocation(props.instancedShader, "useMetalRough");
-                    if (iLocUvScale >= 0)       SetShaderValue(props.instancedShader, iLocUvScale,       &uvScaleRocks,     SHADER_UNIFORM_VEC2);
-                    if (iLocUseNormalMap >= 0)  SetShaderValue(props.instancedShader, iLocUseNormalMap,  &useNormalRocks,   SHADER_UNIFORM_FLOAT);
-                    if (iLocUseMetalRough >= 0) SetShaderValue(props.instancedShader, iLocUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
-                }
-                DrawProps(&props, gameState.camera);
-                // Restore scene uniforms after props
-                if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleScene,   SHADER_UNIFORM_VEC2);
-                if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
+            IssuePropOcclusionQueries(&props);
 
-                // Draw debug visualization if enabled
-                if (gameState.showDebugBoxes) {
-                    DrawSceneDebug(scene);
-                    DrawPropsDebug(&props, gameState.camera);
-                }
-            EndMode3D();
-        EndFullResRender();
+            // Rock shader uniforms
+            float useNormalRocks = props.rockHasNormalMap ? 1.0f : 0.0f;
+            if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleRocks,   SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalRocks, SHADER_UNIFORM_FLOAT);
+            if (iLocUvScale >= 0)       SetShaderValue(props.instancedShader, iLocUvScale,       &uvScaleRocks,     SHADER_UNIFORM_VEC2);
+            if (iLocUseNormalMap >= 0)  SetShaderValue(props.instancedShader, iLocUseNormalMap,  &useNormalRocks,   SHADER_UNIFORM_FLOAT);
+            if (iLocUseMetalRough >= 0) SetShaderValue(props.instancedShader, iLocUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
 
-        // 2. Composite to screen and draw UI
-        CompositeFinalFrame(renderer, gameState.camera, props.renderedCount, props.visibleCount, parallaxScale);
+            DrawProps(&props, gameState.camera);
+
+            // Restore scene uniforms after props
+            if (locUvScale >= 0)      SetShaderValue(renderer.lightingShader, locUvScale,      &uvScaleScene,   SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0) SetShaderValue(renderer.lightingShader, locUseNormalMap, &useNormalScene, SHADER_UNIFORM_FLOAT);
+
+            if (gameState.showDebugBoxes) {
+                DrawSceneDebug(scene);
+                DrawPropsDebug(&props, gameState.camera);
+            }
+        EndMode3D();
+
+        DrawFPS(10, 10);
+        DrawText(TextFormat("Rendered Props: %d/%d (%.1f%%)",
+                 props.renderedCount, props.visibleCount,
+                 props.visibleCount > 0 ? (float)props.renderedCount / props.visibleCount * 100.0f : 0),
+                 10, 40, 20, WHITE);
+        if (parallaxScale <= 0.0f)
+            DrawText("Parallax: OFF  [1-5]", 10, 65, 20, RAYWHITE);
+        else
+            DrawText(TextFormat("Parallax: %.2f  [1-5]", parallaxScale), 10, 65, 20, RAYWHITE);
+
+        EndDrawing();
     }
 
-    // De-Initialization
-    //--------------------------------------------------------------------------------------
-    // Unload resources
     UnloadCharacter(&character);
     UnloadScene(scene);
     UnloadProps(&props);
-    UnloadRenderer(renderer);  // This now handles unloading the shader
+    UnloadRenderer(renderer);
 
-    CloseWindow();                // Close window and OpenGL context
-    //--------------------------------------------------------------------------------------
-
+    CloseWindow();
     return 0;
 }
