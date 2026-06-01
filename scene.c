@@ -76,8 +76,9 @@ static bool BuildVariantPath(const char* diffusePath, const char* suffix, char* 
     return snprintf(outPath, outPathSize, "%s%s", diffusePath, suffix) > 0;
 }
 
-Scene InitScene(float width, float length, float height, float thickness, 
-                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader, unsigned int terrainSeed) {
+Scene InitScene(float width, float length, float height, float thickness,
+                const char* wallTexturePath, const char* floorTexturePath,
+                const char* floorDetailNormalPath, Shader lightingShader, unsigned int terrainSeed) {
     Scene scene = {0};
     
     // Store dimensions
@@ -110,6 +111,7 @@ Scene InitScene(float width, float length, float height, float thickness,
         scene.floorHeightMap = LoadTexture(floorHeightPath);
         if (scene.floorHeightMap.id > 0) {
             scene.floorHasHeightMap = true;
+            GenTextureMipmaps(&scene.floorHeightMap);
             SetTextureFilter(scene.floorHeightMap, MAIN_TEXTURE_FILTER_MODE);
             SetTextureWrap(scene.floorHeightMap, TEXTURE_WRAP_REPEAT);
             printf("Floor height map: %s (ID: %u)\n", floorHeightPath, scene.floorHeightMap.id);
@@ -118,6 +120,19 @@ Scene InitScene(float width, float length, float height, float thickness,
         }
     }
     
+    if (floorDetailNormalPath != NULL) {
+        scene.floorDetailNormalMap = LoadTexture(floorDetailNormalPath);
+        if (scene.floorDetailNormalMap.id > 0) {
+            scene.floorHasDetailNormalMap = true;
+            GenTextureMipmaps(&scene.floorDetailNormalMap);
+            SetTextureFilter(scene.floorDetailNormalMap, MAIN_TEXTURE_FILTER_MODE);
+            SetTextureWrap(scene.floorDetailNormalMap, TEXTURE_WRAP_REPEAT);
+            printf("Floor detail normal: %s (ID: %u)\n", floorDetailNormalPath, scene.floorDetailNormalMap.id);
+        } else {
+            printf("Floor detail normal not found: %s\n", floorDetailNormalPath);
+        }
+    }
+
     // Check if textures loaded successfully
     (void)wallTexturePath;
     if (scene.floorTexture.id == 0) {
@@ -126,10 +141,12 @@ Scene InitScene(float width, float length, float height, float thickness,
     
     // Apply texture filtering to scene textures
     if (scene.floorTexture.id > 0) {
+        GenTextureMipmaps(&scene.floorTexture);
         SetTextureFilter(scene.floorTexture, MAIN_TEXTURE_FILTER_MODE);
         SetTextureWrap(scene.floorTexture, TEXTURE_WRAP_REPEAT);
     }
     if (scene.floorNormalMap.id > 0) {
+        GenTextureMipmaps(&scene.floorNormalMap);
         SetTextureFilter(scene.floorNormalMap, MAIN_TEXTURE_FILTER_MODE);
         SetTextureWrap(scene.floorNormalMap, TEXTURE_WRAP_REPEAT);
     }
@@ -234,8 +251,9 @@ Scene InitScene(float width, float length, float height, float thickness,
     // Assign textures to models
     if (scene.floorTexture.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = scene.floorTexture;
     else scene.terrainModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].color = GRAY; // Fallback color
-    if (scene.floorNormalMap.id > 0)  scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture    = scene.floorNormalMap;
-    if (scene.floorHeightMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_ROUGHNESS].texture = scene.floorHeightMap;
+    if (scene.floorNormalMap.id > 0)       scene.terrainModel.materials[0].maps[MATERIAL_MAP_NORMAL].texture    = scene.floorNormalMap;
+    if (scene.floorDetailNormalMap.id > 0) scene.terrainModel.materials[0].maps[MATERIAL_MAP_OCCLUSION].texture = scene.floorDetailNormalMap;
+    if (scene.floorHeightMap.id > 0)       scene.terrainModel.materials[0].maps[MATERIAL_MAP_ROUGHNESS].texture = scene.floorHeightMap;
     
     // Assign lighting shader to all scene models' materials with safety checks
     if (scene.terrainModel.materialCount > 0) {
@@ -293,8 +311,9 @@ void UnloadScene(Scene scene) {
     // Unload textures
     if (scene.wallTexture.id > 0) UnloadTexture(scene.wallTexture);
     UnloadTexture(scene.floorTexture);
-    if (scene.floorNormalMap.id > 0)  UnloadTexture(scene.floorNormalMap);
-    if (scene.floorHeightMap.id > 0) UnloadTexture(scene.floorHeightMap);
+    if (scene.floorNormalMap.id > 0)       UnloadTexture(scene.floorNormalMap);
+    if (scene.floorDetailNormalMap.id > 0) UnloadTexture(scene.floorDetailNormalMap);
+    if (scene.floorHeightMap.id > 0)       UnloadTexture(scene.floorHeightMap);
     
     // Free allocated memory
     free(scene.wallBoxes);

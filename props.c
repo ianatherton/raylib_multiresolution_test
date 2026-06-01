@@ -85,6 +85,7 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
     if (props.billboardTexture.id == 0) {
         printf("Failed to load billboard texture: %s\n", billboardTexturePath);
     } else {
+        GenTextureMipmaps(&props.billboardTexture);
         SetTextureFilter(props.billboardTexture, PROPS_TEXTURE_FILTER_MODE);
     }
 
@@ -149,6 +150,7 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
         if (rockDiffuse.id == 0) {
             printf("Failed to load rock texture: %s\n", modelTexturePath);
         } else {
+            GenTextureMipmaps(&rockDiffuse);
             SetTextureFilter(rockDiffuse, PROPS_TEXTURE_FILTER_MODE);
             SetTextureWrap(rockDiffuse, TEXTURE_WRAP_REPEAT);
             printf("Rock texture applied: %s (ID: %u)\n", modelTexturePath, rockDiffuse.id);
@@ -161,6 +163,7 @@ Props InitProps(int billboardCount, int modelCount, const char* billboardTexture
         if (rockNormal.id == 0) {
             printf("Failed to load rock normal map: %s\n", modelNormalMapPath);
         } else {
+            GenTextureMipmaps(&rockNormal);
             SetTextureFilter(rockNormal, PROPS_TEXTURE_FILTER_MODE);
             SetTextureWrap(rockNormal, TEXTURE_WRAP_REPEAT);
             props.rockHasNormalMap = true;

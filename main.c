@@ -46,6 +46,7 @@ int main(void) {
     Scene scene = InitScene(roomWidth, roomLength, wallHeight, wallThickness,
                            "raw-assets/tiling_dungeon_brickwall01.png",
                            "raw-assets/tiling_dungeon_floor01.png",
+                           "raw-assets/tilingrock02_n.png",
                            renderer.lightingShader,
                            terrainSeed);
 
@@ -97,8 +98,9 @@ int main(void) {
     int locUvScale       = GetShaderLocation(renderer.lightingShader, "uvScale");
     int locUseNormalMap  = GetShaderLocation(renderer.lightingShader, "useNormalMap");
     int locUseMetalRough = GetShaderLocation(renderer.lightingShader, "useMetalRough");
-    int locUseParallax   = GetShaderLocation(renderer.lightingShader, "useParallax");
-    int locParallaxScale = GetShaderLocation(renderer.lightingShader, "parallaxScale");
+    int locUseParallax      = GetShaderLocation(renderer.lightingShader, "useParallax");
+    int locParallaxScale    = GetShaderLocation(renderer.lightingShader, "parallaxScale");
+    int locUseDetailNormal  = GetShaderLocation(renderer.lightingShader, "useDetailNormal");
 
     int iLocLightPos      = GetShaderLocation(props.instancedShader, "lightPos");
     int iLocLightColor    = GetShaderLocation(props.instancedShader, "lightColor");
@@ -202,16 +204,19 @@ int main(void) {
 
         Vector2 uvScaleScene = {1.0f, 1.0f};
         Vector2 uvScaleRocks = {PROPS_ROCK_UV_REPEAT, PROPS_ROCK_UV_REPEAT};
-        float useNormalScene   = scene.floorHasNormalMap ? 1.0f : 0.0f;
-        float useParallaxScene = (scene.floorHasHeightMap && parallaxScale > 0.0f) ? 1.0f : 0.0f;
-        float useMetalRoughOff = 0.0f;
-        float useParallaxOff   = 0.0f;
+        float useNormalScene      = scene.floorHasNormalMap ? 1.0f : 0.0f;
+        float useDetailNormalOn   = scene.floorHasDetailNormalMap ? 1.0f : 0.0f;
+        float useDetailNormalOff  = 0.0f;
+        float useParallaxScene    = (scene.floorHasHeightMap && parallaxScale > 0.0f) ? 1.0f : 0.0f;
+        float useMetalRoughOff    = 0.0f;
+        float useParallaxOff      = 0.0f;
 
-        if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,     SHADER_UNIFORM_VEC2);
-        if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,   SHADER_UNIFORM_FLOAT);
-        if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff, SHADER_UNIFORM_FLOAT);
-        if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene, SHADER_UNIFORM_FLOAT);
-        if (locParallaxScale >= 0) SetShaderValue(renderer.lightingShader, locParallaxScale, &parallaxScale,    SHADER_UNIFORM_FLOAT);
+        if (locUvScale >= 0)          SetShaderValue(renderer.lightingShader, locUvScale,          &uvScaleScene,      SHADER_UNIFORM_VEC2);
+        if (locUseNormalMap >= 0)     SetShaderValue(renderer.lightingShader, locUseNormalMap,     &useNormalScene,    SHADER_UNIFORM_FLOAT);
+        if (locUseDetailNormal >= 0)  SetShaderValue(renderer.lightingShader, locUseDetailNormal,  &useDetailNormalOn, SHADER_UNIFORM_FLOAT);
+        if (locUseMetalRough >= 0)    SetShaderValue(renderer.lightingShader, locUseMetalRough,    &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+        if (locUseParallax >= 0)      SetShaderValue(renderer.lightingShader, locUseParallax,      &useParallaxScene,  SHADER_UNIFORM_FLOAT);
+        if (locParallaxScale >= 0)    SetShaderValue(renderer.lightingShader, locParallaxScale,    &parallaxScale,     SHADER_UNIFORM_FLOAT);
 
         BeginDrawing();
         ClearBackground(RAYWHITE);
@@ -225,17 +230,19 @@ int main(void) {
             float charUseNormal     = character.hasNormalMap  ? 1.0f : 0.0f;
             float charUseMetalRough = character.hasMetalRough ? 1.0f : 0.0f;
             Vector2 charUvScale = {1.0f, 1.0f};
-            if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &charUvScale,       SHADER_UNIFORM_VEC2);
-            if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &charUseNormal,     SHADER_UNIFORM_FLOAT);
-            if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &charUseMetalRough, SHADER_UNIFORM_FLOAT);
-            if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxOff,    SHADER_UNIFORM_FLOAT);
+            if (locUvScale >= 0)         SetShaderValue(renderer.lightingShader, locUvScale,         &charUvScale,        SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0)    SetShaderValue(renderer.lightingShader, locUseNormalMap,    &charUseNormal,      SHADER_UNIFORM_FLOAT);
+            if (locUseDetailNormal >= 0) SetShaderValue(renderer.lightingShader, locUseDetailNormal, &useDetailNormalOff, SHADER_UNIFORM_FLOAT);
+            if (locUseMetalRough >= 0)   SetShaderValue(renderer.lightingShader, locUseMetalRough,   &charUseMetalRough,  SHADER_UNIFORM_FLOAT);
+            if (locUseParallax >= 0)     SetShaderValue(renderer.lightingShader, locUseParallax,     &useParallaxOff,     SHADER_UNIFORM_FLOAT);
             DrawCharacter(character);
 
             // Restore scene uniforms before issuing occlusion queries
-            if (locUvScale >= 0)       SetShaderValue(renderer.lightingShader, locUvScale,       &uvScaleScene,      SHADER_UNIFORM_VEC2);
-            if (locUseNormalMap >= 0)  SetShaderValue(renderer.lightingShader, locUseNormalMap,  &useNormalScene,    SHADER_UNIFORM_FLOAT);
-            if (locUseMetalRough >= 0) SetShaderValue(renderer.lightingShader, locUseMetalRough, &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
-            if (locUseParallax >= 0)   SetShaderValue(renderer.lightingShader, locUseParallax,   &useParallaxScene,  SHADER_UNIFORM_FLOAT);
+            if (locUvScale >= 0)         SetShaderValue(renderer.lightingShader, locUvScale,         &uvScaleScene,      SHADER_UNIFORM_VEC2);
+            if (locUseNormalMap >= 0)    SetShaderValue(renderer.lightingShader, locUseNormalMap,    &useNormalScene,    SHADER_UNIFORM_FLOAT);
+            if (locUseDetailNormal >= 0) SetShaderValue(renderer.lightingShader, locUseDetailNormal, &useDetailNormalOff, SHADER_UNIFORM_FLOAT);
+            if (locUseMetalRough >= 0)   SetShaderValue(renderer.lightingShader, locUseMetalRough,   &useMetalRoughOff,  SHADER_UNIFORM_FLOAT);
+            if (locUseParallax >= 0)     SetShaderValue(renderer.lightingShader, locUseParallax,     &useParallaxScene,  SHADER_UNIFORM_FLOAT);
 
             IssuePropOcclusionQueries(&props);
 

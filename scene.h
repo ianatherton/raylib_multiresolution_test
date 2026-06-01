@@ -25,6 +25,8 @@ typedef struct {
     Texture2D floorTexture;
     Texture2D floorNormalMap;
     bool floorHasNormalMap;
+    Texture2D floorDetailNormalMap;
+    bool floorHasDetailNormalMap;
     Texture2D floorHeightMap;
     bool floorHasHeightMap;
     
@@ -34,8 +36,9 @@ typedef struct {
 } Scene;
 
 // Initialize scene with dimensions and textures
-Scene InitScene(float width, float length, float height, float thickness, 
-                const char* wallTexturePath, const char* floorTexturePath, Shader lightingShader, unsigned int terrainSeed);
+Scene InitScene(float width, float length, float height, float thickness,
+                const char* wallTexturePath, const char* floorTexturePath,
+                const char* floorDetailNormalPath, Shader lightingShader, unsigned int terrainSeed);
 
 // Draw scene (walls, floor)
 void DrawScene(Scene scene);

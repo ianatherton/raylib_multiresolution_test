@@ -34,7 +34,9 @@
       "Bash(sed -n '515,535p' /usr/include/GL/glext.h)",
       "Bash(sed -n '750,765p' /usr/include/GL/glext.h)",
       "Bash(pkg-config --modversion raylib)",
-      "Read(//usr/local/lib/**)"
+      "Read(//usr/local/lib/**)",
+      "Read(//home/sparkydev/**)",
+      "Read(//tmp/**)"
     ]
   }
 }

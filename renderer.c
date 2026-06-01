@@ -90,6 +90,7 @@ Renderer InitRenderer(void) {
         printf("INFO: Lighting shader loaded successfully (ID: %u)\n", renderer.lightingShader.id);
         renderer.lightingShader.locs[SHADER_LOC_MAP_ALBEDO]    = GetShaderLocation(renderer.lightingShader, "texture0");
         renderer.lightingShader.locs[SHADER_LOC_MAP_NORMAL]    = GetShaderLocation(renderer.lightingShader, "texture1");
+        renderer.lightingShader.locs[SHADER_LOC_MAP_OCCLUSION] = GetShaderLocation(renderer.lightingShader, "texture2");
         renderer.lightingShader.locs[SHADER_LOC_MAP_ROUGHNESS] = GetShaderLocation(renderer.lightingShader, "texture3");
     }
 
@@ -196,6 +197,7 @@ bool InitSkyCloudDome(Renderer* renderer, const char* tilingCloudPngPath) {
         return false;
     }
 
+    GenTextureMipmaps(&tex);
     SetTextureFilter(tex, MAIN_TEXTURE_FILTER_MODE);
     SetTextureWrap(tex, TEXTURE_WRAP_REPEAT);
 

@@ -17,8 +17,8 @@
 // TEXTURE_FILTER_ANISOTROPIC_4X - Anisotropic filtering 4x (higher quality at angles)
 // TEXTURE_FILTER_ANISOTROPIC_8X - Anisotropic filtering 8x (higher quality at angles)
 // TEXTURE_FILTER_ANISOTROPIC_16X - Anisotropic filtering 16x (highest quality at angles)
-#define MAIN_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR      // Filter for full resolution render target
-#define PROPS_TEXTURE_FILTER_MODE TEXTURE_FILTER_BILINEAR  // Filter for quarter resolution props render target
+#define MAIN_TEXTURE_FILTER_MODE TEXTURE_FILTER_TRILINEAR
+#define PROPS_TEXTURE_FILTER_MODE TEXTURE_FILTER_TRILINEAR
 
 static inline void ApplyTextureFilterToAllMaterialMaps(Model model, int filter) { // all material maps incl. GLB embeds
     for (int i = 0; i < model.materialCount; i++) {
@@ -26,7 +26,10 @@ static inline void ApplyTextureFilterToAllMaterialMaps(Model model, int filter) 
         if (mat->maps == NULL) continue;
         for (int m = 0; m <= MATERIAL_MAP_BRDF; m++) {
             Texture2D t = mat->maps[m].texture;
-            if (t.id > 0) SetTextureFilter(t, filter);
+            if (t.id > 0) {
+                GenTextureMipmaps(&mat->maps[m].texture);
+                SetTextureFilter(mat->maps[m].texture, filter);
+            }
         }
     }
 }

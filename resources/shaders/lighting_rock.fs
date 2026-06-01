@@ -33,12 +33,19 @@ const float bayer[16] = float[16](
 #define ROCK_DITHER_START 15.0
 #define ROCK_DITHER_END   80.0  // matches LOS_MAX_ROCK_DISTANCE
 
+#define MIP_START      4.0
+#define MIP_TRANSITION 2.0
+
+#define TSAMPLE(tex, uv, blend) mix(textureLod(tex, uv, 0.0), texture(tex, uv), blend)
+
 out vec4 fragColor;
 
 void main()
 {
-    float dist   = length(fragPos - viewPos);
-    float factor = clamp((dist - ROCK_DITHER_START) / (ROCK_DITHER_END - ROCK_DITHER_START), 0.0, 0.8);
+    float dist      = length(fragPos - viewPos);
+    float mipBlend  = clamp((dist - MIP_START) / MIP_TRANSITION, 0.0, 1.0);
+
+    float factor = clamp((dist - ROCK_DITHER_START) / (ROCK_DITHER_END - ROCK_DITHER_START), 0.1, 0.9);
     if (factor > 0.0) {
         ivec2 sc = ivec2(gl_FragCoord.xy) % 4;
         float threshold = bayer[sc.y * 4 + sc.x] / 16.0;
@@ -46,7 +53,7 @@ void main()
     }
 
     vec2 tiledUV = texCoord * uvScale;
-    vec4 texColor = texture(texture0, tiledUV);
+    vec4 texColor = TSAMPLE(texture0, tiledUV, mipBlend);
 
     vec3 Ngeom = normalize(normal);
     vec3 N = Ngeom;
@@ -55,7 +62,7 @@ void main()
         vec3 T = normalize(tIn - dot(tIn, Ngeom) * Ngeom);
         vec3 B = normalize(cross(Ngeom, T) * tangentSign);
         mat3 TBN = mat3(T, B, Ngeom);
-        vec3 mapN = texture(texture1, tiledUV).rgb * 2.0 - 1.0;
+        vec3 mapN = TSAMPLE(texture1, tiledUV, mipBlend).rgb * 2.0 - 1.0;
         N = normalize(TBN * mapN);
     }
 
@@ -71,8 +78,8 @@ void main()
     float specStr = specularStrength;
     float shine = shininess;
     if (useMetalRough > 0.5) {
-        float metallic  = texture(texture2, tiledUV).r;
-        float roughness = texture(texture3, tiledUV).r;
+        float metallic  = TSAMPLE(texture2, tiledUV, mipBlend).r;
+        float roughness = TSAMPLE(texture3, tiledUV, mipBlend).r;
         specStr = mix(0.02, 0.9, metallic);
         shine   = mix(4.0, 128.0, 1.0 - roughness);
     }
